@@ -326,8 +326,6 @@ Panel {
           Layout.preferredHeight: Style.space(200)
           radius: 8
           color: Util.alpha(Color.background, 0.5)
-          border.color: Util.alpha(Color.foreground, 0.12)
-          border.width: 1
 
           // Placeholder when no URL in clipboard
           Column {
@@ -376,8 +374,6 @@ Panel {
             height: width
             radius: 6
             color: "#ffffff"
-            border.color: "#d0d0d0"
-            border.width: 1
 
             Grid {
               anchors.centerIn: parent
