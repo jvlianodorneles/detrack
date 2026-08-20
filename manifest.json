@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "id": "dorneles.detrack",
+  "name": "DeTrack",
+  "version": "1.0.0",
+  "author": "Dorneles",
+  "license": "MIT",
+  "description": "URL tracker cleaner and instant QR Code sharing popup for Omarchy.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "DeTrack",
+    "description": "Strips trackers from clipboard URLs, displays scannable QR Code, with 1-click Copy and Browse actions.",
+    "category": "Privacy",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "showTrackerBadge": false,
+      "iconStyle": "shield"
+    },
+    "schema": [
+      {
+        "key": "showTrackerBadge",
+        "type": "boolean",
+        "label": "Show Trackers Removed on Bar",
+        "defaultValue": false,
+        "description": "Displays the number of stripped tracking parameters on the status bar icon."
+      },
+      {
+        "key": "iconStyle",
+        "type": "enum",
+        "label": "Bar Icon Style",
+        "options": [
+          "shield",
+          "link",
+          "qrcode"
+        ],
+        "defaultValue": "shield",
+        "description": "Icon displayed on the status bar (󰒃 Shield, 󰌹 Link, 󰐳 QR Code)."
+      }
+    ]
+  }
+}
