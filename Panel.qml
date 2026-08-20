@@ -261,35 +261,6 @@ Panel {
 
           Item { Layout.fillWidth: true }
 
-          // Re-read clipboard button
-          Rectangle {
-            Layout.preferredWidth: Style.space(24)
-            Layout.preferredHeight: Style.space(24)
-            radius: 4
-            color: refreshMouseArea.pressed ? Util.alpha(Color.foreground, 0.15) : (refreshMouseArea.containsMouse ? Util.alpha(Color.foreground, 0.08) : "transparent")
-
-            Text {
-              anchors.centerIn: parent
-              text: "󰑐"
-              color: refreshMouseArea.containsMouse ? Color.accent : Color.muted
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.caption
-            }
-
-            MouseArea {
-              id: refreshMouseArea
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.fetchFromClipboard()
-            }
-
-            PanelToolTip {
-              visible: refreshMouseArea.containsMouse
-              text: "Re-read from clipboard (P / R)"
-            }
-          }
-
           // Close button
           Rectangle {
             Layout.preferredWidth: Style.space(24)
