@@ -28,9 +28,9 @@ Panel {
   property bool hasUrl: false
   property bool isCopied: false
   property var qrMatrix: []
-  readonly property int qrSize: qrMatrix ? qrMatrix.length : 0
+  readonly property int qrSize: (qrMatrix && qrMatrix.length) ? qrMatrix.length : 0
 
-  // 1. Instant sync from Omarchy's live clipboard history
+  // 1. Instant synchronous sync from Omarchy clipboard history
   property FileView historyFile: FileView {
     path: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
     watchChanges: true
@@ -62,10 +62,11 @@ Panel {
       var raw = historyFile.text()
       if (raw && raw.length > 0) {
         var hist = JSON.parse(raw)
-        if (hist && hist.length > 0) {
-          for (var i = 0; i < Math.min(hist.length, 5); i++) {
-            if (hist[i].type === "text" && hist[i].text) {
-              root.processInput(hist[i].text)
+        if (hist && Array.isArray(hist) && hist.length > 0) {
+          for (var i = 0; i < Math.min(hist.length, 10); i++) {
+            var item = hist[i]
+            if (item && item.type === "text" && item.text) {
+              root.processInput(item.text)
               return true
             }
           }
@@ -97,7 +98,7 @@ Panel {
       return
     }
 
-    // 1. Clean the URL
+    // 1. First clean the URL
     var res = Engine.cleanUrl(rawText)
     if (res.isValid && res.cleanedUrl && res.cleanedUrl.length > 0) {
       root.hasUrl = true
@@ -224,7 +225,7 @@ Panel {
               text: "󰒃" // Shield check
               color: Color.accent
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.title3
+              font.pixelSize: Style.font.heading
             }
 
             Text {
@@ -242,7 +243,7 @@ Panel {
             visible: root.trackersCount > 0
             Layout.preferredHeight: Style.space(18)
             Layout.preferredWidth: trackerBadgeText.implicitWidth + Style.space(10)
-            radius: Style.radius(9)
+            radius: 9
             color: Util.alpha(Color.accent, 0.18)
             border.color: Util.alpha(Color.accent, 0.4)
             border.width: 1
@@ -264,7 +265,7 @@ Panel {
           Rectangle {
             Layout.preferredWidth: Style.space(24)
             Layout.preferredHeight: Style.space(24)
-            radius: Style.radius(4)
+            radius: 4
             color: refreshMouseArea.pressed ? Util.alpha(Color.foreground, 0.15) : (refreshMouseArea.containsMouse ? Util.alpha(Color.foreground, 0.08) : "transparent")
 
             Text {
@@ -293,7 +294,7 @@ Panel {
           Rectangle {
             Layout.preferredWidth: Style.space(24)
             Layout.preferredHeight: Style.space(24)
-            radius: Style.radius(4)
+            radius: 4
             color: closeMouseArea.pressed ? Util.alpha(Color.foreground, 0.15) : (closeMouseArea.containsMouse ? Util.alpha(Color.foreground, 0.08) : "transparent")
 
             Text {
@@ -323,7 +324,7 @@ Panel {
         Rectangle {
           Layout.fillWidth: true
           Layout.preferredHeight: Style.space(200)
-          radius: Style.radius(8)
+          radius: 8
           color: Util.alpha(Color.background, 0.5)
           border.color: Util.alpha(Color.foreground, 0.12)
           border.width: 1
@@ -373,7 +374,7 @@ Panel {
               : 0
             width: (root.qrSize * moduleSize) + Style.space(16)
             height: width
-            radius: Style.radius(6)
+            radius: 6
             color: "#ffffff"
             border.color: "#d0d0d0"
             border.width: 1
@@ -400,13 +401,15 @@ Panel {
 
             // Click QR Code to copy
             MouseArea {
+              id: qrMouseArea
               anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
+              hoverEnabled: true
+              cursorShape: root.hasUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
               onClicked: root.copyCleanedUrl()
             }
 
             PanelToolTip {
-              visible: parent.containsMouse
+              visible: qrMouseArea.containsMouse && root.hasUrl
               text: root.cleanedUrl ? ("Click to copy:\n" + root.cleanedUrl) : "Click to copy"
             }
           }
@@ -422,7 +425,7 @@ Panel {
           Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: Style.space(28)
-            radius: Style.radius(6)
+            radius: 6
             color: !root.hasUrl ? Util.alpha(Color.foreground, 0.05) : (copyMouseArea.pressed ? Qt.darker(Color.accent, 1.25) : Color.accent)
             opacity: root.hasUrl ? 1.0 : 0.4
 
@@ -451,6 +454,7 @@ Panel {
             MouseArea {
               id: copyMouseArea
               anchors.fill: parent
+              hoverEnabled: true
               enabled: root.hasUrl
               cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
               onClicked: root.copyCleanedUrl()
@@ -466,7 +470,7 @@ Panel {
           Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: Style.space(28)
-            radius: Style.radius(6)
+            radius: 6
             color: !root.hasUrl ? Util.alpha(Color.foreground, 0.05) : (browseMouseArea.pressed ? Util.alpha(Color.foreground, 0.2) : (browseMouseArea.containsMouse ? Util.alpha(Color.foreground, 0.12) : Util.alpha(Color.foreground, 0.08)))
             border.color: Util.alpha(Color.foreground, 0.15)
             border.width: 1
@@ -496,6 +500,7 @@ Panel {
             MouseArea {
               id: browseMouseArea
               anchors.fill: parent
+              hoverEnabled: true
               enabled: root.hasUrl
               cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
               onClicked: root.openInBrowser()
