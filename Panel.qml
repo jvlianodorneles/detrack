@@ -28,29 +28,20 @@ Panel {
   property bool hasUrl: false
   property bool isCopied: false
   property var qrMatrix: []
+  readonly property int qrSize: qrMatrix ? qrMatrix.length : 0
 
-  // Watch Omarchy clipboard-history.json for instant synchronous capture
+  // 1. Instant sync from Omarchy's live clipboard history
   property FileView historyFile: FileView {
     path: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
-      try {
-        var hist = JSON.parse(text())
-        if (hist && hist.length > 0) {
-          for (var i = 0; i < Math.min(hist.length, 5); i++) {
-            if (hist[i].type === "text" && hist[i].text) {
-              root.processInput(hist[i].text)
-              break
-            }
-          }
-        }
-      } catch (e) {}
+      root.readHistoryFileSync()
     }
   }
 
-  // Direct clipboard read via wl-paste
+  // 2. Direct Process for wl-paste
   Process {
     id: clipboardProc
     command: ["wl-paste", "--type", "text", "--no-newline"]
@@ -58,16 +49,35 @@ Panel {
       id: clipboardStdout
       waitForEnd: true
       onStreamFinished: {
-        var clipText = String(text || "").trim()
-        if (clipText.length > 0) {
-          root.processInput(clipText)
+        var raw = String(text || "").trim()
+        if (raw.length > 0) {
+          root.processInput(raw)
         }
       }
     }
   }
 
+  function readHistoryFileSync() {
+    try {
+      var raw = historyFile.text()
+      if (raw && raw.length > 0) {
+        var hist = JSON.parse(raw)
+        if (hist && hist.length > 0) {
+          for (var i = 0; i < Math.min(hist.length, 5); i++) {
+            if (hist[i].type === "text" && hist[i].text) {
+              root.processInput(hist[i].text)
+              return true
+            }
+          }
+        }
+      }
+    } catch (e) {}
+    return false
+  }
+
   function fetchFromClipboard() {
     historyFile.reload()
+    root.readHistoryFileSync()
     clipboardProc.running = false
     clipboardProc.command = ["wl-paste", "--type", "text", "--no-newline"]
     clipboardProc.running = true
@@ -84,11 +94,10 @@ Panel {
       root.charsSaved = 0
       root.domain = ""
       root.qrMatrix = []
-      qrCanvas.requestPaint()
       return
     }
 
-    // 1. First perform the cleaning
+    // 1. Clean the URL
     var res = Engine.cleanUrl(rawText)
     if (res.isValid && res.cleanedUrl && res.cleanedUrl.length > 0) {
       root.hasUrl = true
@@ -99,7 +108,7 @@ Panel {
       root.charsSaved = res.charsSaved
       root.domain = res.domain
 
-      // 2. Then generate QR-Code with the CLEANED URL
+      // 2. Generate QR-Code directly from the CLEANED URL
       try {
         root.qrMatrix = QRCodeLib.generateMatrix(res.cleanedUrl, "M")
       } catch (e) {
@@ -119,7 +128,6 @@ Panel {
       root.domain = ""
       root.qrMatrix = []
     }
-    qrCanvas.requestPaint()
   }
 
   function copyCleanedUrl() {
@@ -320,61 +328,72 @@ Panel {
           border.color: Util.alpha(Color.foreground, 0.12)
           border.width: 1
 
-          // White container for camera contrast
+          // Placeholder when no URL in clipboard
+          Column {
+            anchors.centerIn: parent
+            spacing: Style.space(6)
+            visible: !root.hasUrl || root.qrSize === 0
+
+            Text {
+              text: "󰅌"
+              color: Color.muted
+              opacity: 0.7
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.displayLarge
+              horizontalAlignment: Text.AlignHCenter
+              anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Text {
+              text: "No URL in clipboard"
+              color: Color.popups.text
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.body
+              horizontalAlignment: Text.AlignHCenter
+              anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Text {
+              text: "Copy a link to clean & generate QR"
+              color: Color.muted
+              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignHCenter
+              anchors.horizontalCenter: parent.horizontalCenter
+            }
+          }
+
+          // Crisp native QR Code Box
           Rectangle {
             id: qrWhiteBox
+            visible: root.hasUrl && root.qrSize > 0
             anchors.centerIn: parent
-            width: Style.space(180)
-            height: Style.space(180)
+            readonly property int moduleSize: root.qrSize > 0
+              ? Math.max(2, Math.floor(Style.space(170) / root.qrSize))
+              : 0
+            width: (root.qrSize * moduleSize) + Style.space(16)
+            height: width
             radius: Style.radius(6)
             color: "#ffffff"
             border.color: "#d0d0d0"
             border.width: 1
 
-            Canvas {
-              id: qrCanvas
-              anchors.fill: parent
-              anchors.margins: Style.space(8)
-              antialiasing: false
+            Grid {
+              anchors.centerIn: parent
+              columns: root.qrSize
+              rows: root.qrSize
 
-              onWidthChanged: requestPaint()
-              onHeightChanged: requestPaint()
-              onVisibleChanged: requestPaint()
+              Repeater {
+                model: root.qrSize * root.qrSize
 
-              Connections {
-                target: root
-                function onQrMatrixChanged() { qrCanvas.requestPaint() }
-                function onHasUrlChanged() { qrCanvas.requestPaint() }
-              }
+                Rectangle {
+                  required property int index
+                  readonly property int matrixRow: Math.floor(index / root.qrSize)
+                  readonly property int matrixColumn: index % root.qrSize
 
-              onPaint: {
-                var ctx = getContext("2d")
-                ctx.clearRect(0, 0, width, height)
-
-                if (width <= 0 || height <= 0) return
-
-                if (!root.hasUrl || !root.qrMatrix || root.qrMatrix.length === 0) {
-                  ctx.fillStyle = "#888888"
-                  ctx.font = "11px sans-serif"
-                  ctx.textAlign = "center"
-                  ctx.textBaseline = "middle"
-                  ctx.fillText("No URL in clipboard", width / 2, height / 2)
-                  return
-                }
-
-                var matrix = root.qrMatrix
-                var count = matrix.length
-                if (count === 0) return
-
-                var cellSize = width / count
-
-                ctx.fillStyle = "#000000"
-                for (var r = 0; r < count; r++) {
-                  for (var c = 0; c < count; c++) {
-                    if (matrix[r][c]) {
-                      ctx.fillRect(Math.floor(c * cellSize), Math.floor(r * cellSize), Math.ceil(cellSize), Math.ceil(cellSize))
-                    }
-                  }
+                  width: qrWhiteBox.moduleSize
+                  height: qrWhiteBox.moduleSize
+                  color: (root.qrMatrix && root.qrMatrix[matrixRow] && root.qrMatrix[matrixRow][matrixColumn]) ? "#000000" : "transparent"
                 }
               }
             }
@@ -382,12 +401,12 @@ Panel {
             // Click QR Code to copy
             MouseArea {
               anchors.fill: parent
-              cursorShape: root.hasUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
+              cursorShape: Qt.PointingHandCursor
               onClicked: root.copyCleanedUrl()
             }
 
             PanelToolTip {
-              visible: parent.containsMouse && root.hasUrl
+              visible: parent.containsMouse
               text: root.cleanedUrl ? ("Click to copy:\n" + root.cleanedUrl) : "Click to copy"
             }
           }
