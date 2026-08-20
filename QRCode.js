@@ -698,6 +698,11 @@ var QRCode = (function () {
   };
 })();
 
+// Top-level wrappers so QML `import "QRCode.js" as Lib` can call Lib.generateMatrix()
+function generateMatrix(text, ecl) {
+  return QRCode.generateMatrix(text, ecl);
+}
+
 // Export for CommonJS (Node.js tests) if available
 if (typeof module !== "undefined" && module.exports) {
   module.exports = QRCode;
