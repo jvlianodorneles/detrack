@@ -29,7 +29,7 @@ Panel {
   property bool isCopied: false
   property var qrMatrix: []
 
-  // Watch Omarchy clipboard-history.json for instant sync
+  // Watch Omarchy clipboard-history.json for instant synchronous capture
   property FileView historyFile: FileView {
     path: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
     watchChanges: true
@@ -50,7 +50,7 @@ Panel {
     }
   }
 
-  // Process to read clipboard directly via wl-paste
+  // Direct clipboard read via wl-paste
   Process {
     id: clipboardProc
     command: ["wl-paste", "--type", "text", "--no-newline"]
@@ -73,6 +73,7 @@ Panel {
     clipboardProc.running = true
   }
 
+  // Step 1: Clean URL -> Step 2: Generate QR Code from Cleaned URL
   function processInput(rawText) {
     if (!rawText || rawText.length === 0) {
       root.hasUrl = false
@@ -87,8 +88,9 @@ Panel {
       return
     }
 
+    // 1. First perform the cleaning
     var res = Engine.cleanUrl(rawText)
-    if (res.isValid) {
+    if (res.isValid && res.cleanedUrl && res.cleanedUrl.length > 0) {
       root.hasUrl = true
       root.originalUrl = res.originalUrl
       root.cleanedUrl = res.cleanedUrl
@@ -97,7 +99,7 @@ Panel {
       root.charsSaved = res.charsSaved
       root.domain = res.domain
 
-      // Generate QR Code matrix
+      // 2. Then generate QR-Code with the CLEANED URL
       try {
         root.qrMatrix = QRCodeLib.generateMatrix(res.cleanedUrl, "M")
       } catch (e) {
@@ -143,8 +145,8 @@ Panel {
   }
 
   function open() {
-    root.controller.show()
     root.fetchFromClipboard()
+    root.controller.show()
   }
 
   function close() {
@@ -172,8 +174,8 @@ Panel {
     owner: root.barIdentity
     bar: root.bar || (hostWidget ? hostWidget.bar : null)
     open: root.opened
-    contentWidth: panel.fittedContentWidth(Style.space(320))
-    contentHeight: panel.fittedContentHeight(Style.space(370), Style.space(400))
+    contentWidth: panel.fittedContentWidth(Style.space(250))
+    contentHeight: panel.fittedContentHeight(Style.space(285), Style.space(310))
 
     Item {
       anchors.fill: parent
@@ -197,17 +199,17 @@ Panel {
 
       ColumnLayout {
         anchors.fill: parent
-        spacing: Style.space(10)
+        spacing: Style.space(8)
 
         // ------------------------------------------------ Header
         RowLayout {
           Layout.fillWidth: true
-          Layout.preferredHeight: Style.space(26)
-          spacing: Style.space(8)
+          Layout.preferredHeight: Style.space(24)
+          spacing: Style.space(6)
 
           // App Title + Icon
           RowLayout {
-            spacing: Style.space(6)
+            spacing: Style.space(5)
             Layout.alignment: Qt.AlignVCenter
 
             Text {
@@ -230,9 +232,9 @@ Panel {
           // Trackers removed badge
           Rectangle {
             visible: root.trackersCount > 0
-            Layout.preferredHeight: Style.space(20)
-            Layout.preferredWidth: trackerBadgeText.implicitWidth + Style.space(12)
-            radius: Style.radius(10)
+            Layout.preferredHeight: Style.space(18)
+            Layout.preferredWidth: trackerBadgeText.implicitWidth + Style.space(10)
+            radius: Style.radius(9)
             color: Util.alpha(Color.accent, 0.18)
             border.color: Util.alpha(Color.accent, 0.4)
             border.width: 1
@@ -240,7 +242,7 @@ Panel {
             Text {
               id: trackerBadgeText
               anchors.centerIn: parent
-              text: "-" + root.trackersCount + " TRACKER" + (root.trackersCount > 1 ? "S" : "")
+              text: "-" + root.trackersCount
               color: Color.accent
               font.family: "Monospace, monospace"
               font.pixelSize: Style.font.caption
@@ -252,17 +254,17 @@ Panel {
 
           // Re-read clipboard button
           Rectangle {
-            Layout.preferredWidth: Style.space(26)
-            Layout.preferredHeight: Style.space(26)
+            Layout.preferredWidth: Style.space(24)
+            Layout.preferredHeight: Style.space(24)
             radius: Style.radius(4)
             color: refreshMouseArea.pressed ? Util.alpha(Color.foreground, 0.15) : (refreshMouseArea.containsMouse ? Util.alpha(Color.foreground, 0.08) : "transparent")
 
             Text {
               anchors.centerIn: parent
-              text: "󰑐" // Refresh icon
+              text: "󰑐"
               color: refreshMouseArea.containsMouse ? Color.accent : Color.muted
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.caption
             }
 
             MouseArea {
@@ -281,17 +283,17 @@ Panel {
 
           // Close button
           Rectangle {
-            Layout.preferredWidth: Style.space(26)
-            Layout.preferredHeight: Style.space(26)
+            Layout.preferredWidth: Style.space(24)
+            Layout.preferredHeight: Style.space(24)
             radius: Style.radius(4)
             color: closeMouseArea.pressed ? Util.alpha(Color.foreground, 0.15) : (closeMouseArea.containsMouse ? Util.alpha(Color.foreground, 0.08) : "transparent")
 
             Text {
               anchors.centerIn: parent
-              text: "󰅖" // Close icon
+              text: "󰅖"
               color: closeMouseArea.containsMouse ? Color.urgent : Color.muted
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.caption
             }
 
             MouseArea {
@@ -312,18 +314,18 @@ Panel {
         // ------------------------------------------------ QR Code Card
         Rectangle {
           Layout.fillWidth: true
-          Layout.preferredHeight: Style.space(210)
+          Layout.preferredHeight: Style.space(200)
           radius: Style.radius(8)
           color: Util.alpha(Color.background, 0.5)
           border.color: Util.alpha(Color.foreground, 0.12)
           border.width: 1
 
-          // White container for optimal camera scanning contrast
+          // White container for camera contrast
           Rectangle {
             id: qrWhiteBox
             anchors.centerIn: parent
-            width: Style.space(190)
-            height: Style.space(190)
+            width: Style.space(180)
+            height: Style.space(180)
             radius: Style.radius(6)
             color: "#ffffff"
             border.color: "#d0d0d0"
@@ -332,7 +334,7 @@ Panel {
             Canvas {
               id: qrCanvas
               anchors.fill: parent
-              anchors.margins: Style.space(10)
+              anchors.margins: Style.space(8)
               antialiasing: false
 
               onWidthChanged: requestPaint()
@@ -353,7 +355,7 @@ Panel {
 
                 if (!root.hasUrl || !root.qrMatrix || root.qrMatrix.length === 0) {
                   ctx.fillStyle = "#888888"
-                  ctx.font = "12px sans-serif"
+                  ctx.font = "11px sans-serif"
                   ctx.textAlign = "center"
                   ctx.textBaseline = "middle"
                   ctx.fillText("No URL in clipboard", width / 2, height / 2)
@@ -386,81 +388,34 @@ Panel {
 
             PanelToolTip {
               visible: parent.containsMouse && root.hasUrl
-              text: "Click to copy cleaned URL"
+              text: root.cleanedUrl ? ("Click to copy:\n" + root.cleanedUrl) : "Click to copy"
             }
-          }
-        }
-
-        // ------------------------------------------------ Cleaned URL Preview
-        Rectangle {
-          Layout.fillWidth: true
-          Layout.preferredHeight: Style.space(32)
-          radius: Style.radius(6)
-          color: Util.alpha(Color.background, 0.4)
-          border.color: Util.alpha(Color.foreground, 0.1)
-          border.width: 1
-          clip: true
-
-          RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: Style.space(8)
-            anchors.rightMargin: Style.space(8)
-            spacing: Style.space(6)
-
-            Text {
-              text: "󰌹" // Link icon
-              color: root.hasUrl ? Color.accent : Color.muted
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.caption
-            }
-
-            Text {
-              Layout.fillWidth: true
-              text: root.hasUrl ? root.cleanedUrl : "Copy a URL to your clipboard to clean"
-              color: root.hasUrl ? Color.popups.text : Color.muted
-              font.family: "Monospace, monospace"
-              font.pixelSize: Style.font.caption
-              font.italic: !root.hasUrl
-              elide: Text.ElideMiddle
-              wrapMode: Text.NoWrap
-            }
-          }
-
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: root.hasUrl ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: root.copyCleanedUrl()
-          }
-
-          PanelToolTip {
-            visible: parent.containsMouse && root.hasUrl
-            text: root.cleanedUrl
           }
         }
 
         // ------------------------------------------------ Action Buttons Row (COPY / BROWSE)
         RowLayout {
           Layout.fillWidth: true
-          Layout.preferredHeight: Style.space(38)
+          Layout.preferredHeight: Style.space(28)
           spacing: Style.space(8)
 
           // COPY BUTTON
           Rectangle {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: Style.space(28)
             radius: Style.radius(6)
             color: !root.hasUrl ? Util.alpha(Color.foreground, 0.05) : (copyMouseArea.pressed ? Qt.darker(Color.accent, 1.25) : Color.accent)
             opacity: root.hasUrl ? 1.0 : 0.4
 
             RowLayout {
               anchors.centerIn: parent
-              spacing: Style.space(6)
+              spacing: Style.space(5)
 
               Text {
-                text: root.isCopied ? "󰄬" : "󰅍" // Checkmark or Copy icon
+                text: root.isCopied ? "󰄬" : "󰅍" // Check or Copy
                 color: root.hasUrl ? "#ffffff" : Color.muted
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.body
+                font.pixelSize: Style.font.caption
                 font.bold: true
               }
 
@@ -469,7 +424,7 @@ Panel {
                 color: root.hasUrl ? "#ffffff" : Color.muted
                 font.family: "Monospace, monospace"
                 font.bold: true
-                font.pixelSize: Style.font.body
+                font.pixelSize: Style.font.caption
                 font.letterSpacing: 1
               }
             }
@@ -491,7 +446,7 @@ Panel {
           // BROWSE BUTTON
           Rectangle {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: Style.space(28)
             radius: Style.radius(6)
             color: !root.hasUrl ? Util.alpha(Color.foreground, 0.05) : (browseMouseArea.pressed ? Util.alpha(Color.foreground, 0.2) : (browseMouseArea.containsMouse ? Util.alpha(Color.foreground, 0.12) : Util.alpha(Color.foreground, 0.08)))
             border.color: Util.alpha(Color.foreground, 0.15)
@@ -500,13 +455,13 @@ Panel {
 
             RowLayout {
               anchors.centerIn: parent
-              spacing: Style.space(6)
+              spacing: Style.space(5)
 
               Text {
-                text: "󰖟" // Browser / Web icon
+                text: "󰖟" // Browser icon
                 color: root.hasUrl ? Color.popups.text : Color.muted
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.body
+                font.pixelSize: Style.font.caption
               }
 
               Text {
@@ -514,7 +469,7 @@ Panel {
                 color: root.hasUrl ? Color.popups.text : Color.muted
                 font.family: "Monospace, monospace"
                 font.bold: true
-                font.pixelSize: Style.font.body
+                font.pixelSize: Style.font.caption
                 font.letterSpacing: 1
               }
             }
@@ -529,7 +484,7 @@ Panel {
 
             PanelToolTip {
               visible: browseMouseArea.containsMouse
-              text: "Open cleaned URL in default web browser (B / Enter)"
+              text: "Open cleaned URL in default browser (B / Enter)"
             }
           }
         }
