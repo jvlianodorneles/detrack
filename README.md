@@ -6,6 +6,10 @@
 [![Omarchy Quattro](https://img.shields.io/badge/Omarchy-Quattro-blue.svg)](https://omarchyplugins.com)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%2F%20Wayland-informational.svg)]()
 
+<p align="center">
+  <img src="preview.png" alt="DeTrack Preview" width="340">
+</p>
+
 **DeTrack** automatically intercepts URLs in your clipboard, strips all tracking parameters (such as `utm_*`, `fbclid`, `gclid`, `matt_*`, Google/Facebook redirect wrappers, etc.), and instantly renders a pixel-perfect, scannable QR Code with 1-click **COPY** and **BROWSE** actions.
 
 ---
