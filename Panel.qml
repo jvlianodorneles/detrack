@@ -214,10 +214,7 @@ Panel {
         PanelHero {
           Layout.fillWidth: true
           title: "detrack"
-          meta: root.hasUrl && root.trackersCount > 0
-            ? (root.trackersCount + " TRACKER" + (root.trackersCount > 1 ? "S" : "") + " REMOVED")
-            : "URL TRACKER CLEANER"
-          detail: root.hasUrl && root.charsSaved > 0 ? ("-" + root.charsSaved + " chars") : ""
+          meta: "URL TRACKER CLEANER"
           foreground: root.foreground
           fontFamily: root.fontFamily
 
@@ -244,7 +241,10 @@ Panel {
           }
         }
 
-        PanelSeparator { foreground: root.foreground }
+        PanelSeparator {
+          Layout.fillWidth: true
+          foreground: root.foreground
+        }
 
         // ------------------------------------------------ QR Code Card
         Rectangle {
@@ -338,38 +338,36 @@ Panel {
           }
         }
 
-        // ------------------------------------------------ Domain & Tracker Info
-        Column {
+        // ------------------------------------------------ Tracker Info Counter
+        RowLayout {
           visible: root.hasUrl
           Layout.fillWidth: true
-          spacing: Style.space(2)
+          Layout.preferredHeight: Style.space(18)
+          spacing: Style.space(6)
+
+          Item { Layout.fillWidth: true }
 
           Text {
-            visible: root.domain !== ""
-            text: root.domain
-            color: Color.popups.text
-            font.family: "Monospace, monospace"
-            font.pixelSize: Style.font.bodySmall
-            font.bold: true
-            horizontalAlignment: Text.AlignHCenter
-            width: parent.width
-            elide: Text.ElideMiddle
-          }
-
-          Text {
-            visible: root.trackersCount > 0
-            text: "󰒃 " + root.trackersCount + " tracker" + (root.trackersCount > 1 ? "s" : "") + " removed"
-            color: Color.accent
+            text: root.trackersCount > 0
+              ? ("󰒃 " + root.trackersCount + " TRACKER" + (root.trackersCount > 1 ? "S" : "") + " REMOVED" + (root.charsSaved > 0 ? " (-" + root.charsSaved + " chars)" : ""))
+              : "󰄬 URL IS CLEAN"
+            color: root.trackersCount > 0 ? Color.accent : Color.popups.text
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
+            font.bold: true
+            font.letterSpacing: 1
             horizontalAlignment: Text.AlignHCenter
-            width: parent.width
 
             Behavior on opacity { NumberAnimation { duration: 150 } }
           }
+
+          Item { Layout.fillWidth: true }
         }
 
-        PanelSeparator { foreground: root.foreground }
+        PanelSeparator {
+          Layout.fillWidth: true
+          foreground: root.foreground
+        }
 
         // ------------------------------------------------ Action Buttons Row (COPY / BROWSE)
         RowLayout {
