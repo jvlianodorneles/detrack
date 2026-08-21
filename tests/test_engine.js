@@ -276,5 +276,49 @@ test("Rejects markup-shaped hostname text and HTML tags in URLs", () => {
   assert(!res4.cleanedUrl.includes(">"));
 });
 
+// 26. Handles URLs with query string directly on hostname without trailing slash
+test("Handles URLs and bare domains with query string directly on hostname without slash", () => {
+  const dirty1 = "https://example.com?utm_source=test&id=123";
+  const res1 = Engine.cleanUrl(dirty1);
+  assert.strictEqual(res1.isValid, true);
+  assert.strictEqual(res1.cleanedUrl, "https://example.com?id=123");
+  assert.strictEqual(res1.trackersCount, 1);
+  assert(res1.trackersRemoved.includes("utm_source"));
+
+  const dirty2 = "example.com?utm_source=test&ref_id=456";
+  const res2 = Engine.cleanUrl(dirty2);
+  assert.strictEqual(res2.isValid, true);
+  assert.strictEqual(res2.cleanedUrl, "https://example.com?ref_id=456");
+  assert(res2.trackersRemoved.includes("utm_source"));
+});
+
+// 27. Strips URL-encoded tracking parameter names (anti-evasion)
+test("Strips URL-encoded tracking parameter names (%75%74%6d...)", () => {
+  const dirty = "https://example.com/page?%75%74%6d%5f%73%6f%75%72%63%65=ad_campaign&legit=hello";
+  const res = Engine.cleanUrl(dirty);
+  assert.strictEqual(res.isValid, true);
+  assert.strictEqual(res.cleanedUrl, "https://example.com/page?legit=hello");
+  assert.strictEqual(res.trackersCount, 1);
+  assert(res.trackersRemoved.includes("utm_source"));
+});
+
+// 28. Unwraps URL-encoded href.li redirect targets
+test("Unwraps URL-encoded href.li redirect targets", () => {
+  const dirty = "https://href.li/?https%3A%2F%2Fexample.com%2Ftarget%3Futm_source%3Dredirect_tracker";
+  const res = Engine.cleanUrl(dirty);
+  assert.strictEqual(res.isValid, true);
+  assert.strictEqual(res.cleanedUrl, "https://example.com/target");
+  assert(res.trackersRemoved.includes("redirect_wrapper"));
+  assert(res.trackersRemoved.includes("utm_source"));
+});
+
+// 29. Handles fragments directly attached to hostname
+test("Handles fragments directly attached to hostname", () => {
+  const dirty = "https://example.com#section";
+  const res = Engine.cleanUrl(dirty);
+  assert.strictEqual(res.isValid, true);
+  assert.strictEqual(res.cleanedUrl, "https://example.com#section");
+});
+
 console.log(`\nResults: ${passed} / ${total} tests passed.\n`);
 if (passed !== total) process.exit(1);

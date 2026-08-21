@@ -8,6 +8,8 @@ import sys
 import os
 import re
 import json
+import socket
+import ipaddress
 import argparse
 import subprocess
 import urllib.parse
@@ -111,8 +113,8 @@ def is_url(text: str) -> bool:
         return False
     if re.search(r'[<>\'\"`\\^|]', t):
         return False
-    url_pattern = r'^(?:https?|ftps?)://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:/[^\s<>\'\"`\\^|]*)?$'
-    bare_domain_pattern = r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:/[^\s<>\'\"`\\^|]*)?$'
+    url_pattern = r'^(?:https?|ftps?)://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|]*)?$'
+    bare_domain_pattern = r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|]*)?$'
     return bool(re.match(url_pattern, t, re.I) or re.match(bare_domain_pattern, t, re.I))
 
 def extract_url(text: str) -> str:
@@ -123,7 +125,7 @@ def extract_url(text: str) -> str:
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", t, re.I):
             return "https://" + t
         return t
-    m = re.search(r"https?://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:/[^\s<>\'\"`\\^|]*)?", text, re.I)
+    m = re.search(r"https?://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|]*)?", text, re.I)
     if m and is_url(m.group(0)):
         return m.group(0)
     return ""
@@ -170,7 +172,11 @@ def normalize_youtube_shorts(url: str) -> str | None:
     return None
 
 def is_tracking_param(key: str, hostname: str, preserve_params: set | None = None) -> bool:
-    lk = key.lower()
+    try:
+        decoded_key = urllib.parse.unquote(key)
+    except Exception:
+        decoded_key = key
+    lk = decoded_key.lower()
     if preserve_params and lk in preserve_params:
         return False
 
@@ -194,14 +200,44 @@ def is_tracking_param(key: str, hostname: str, preserve_params: set | None = Non
                     return True
     return False
 
+def is_safe_target_url(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme.lower() not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        if hostname.lower() in ("localhost", "ip6-localhost", "ip6-loopback"):
+            return False
+        try:
+            addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            for _, _, _, _, sockaddr in addr_info:
+                ip_str = sockaddr[0]
+                ip = ipaddress.ip_address(ip_str)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+                    return False
+        except Exception:
+            return False
+        return True
+    except Exception:
+        return False
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not is_safe_target_url(newurl):
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
 def unshorten_url(url: str) -> str:
     try:
-        if not re.match(r"^https?://", url, re.I):
+        if not is_safe_target_url(url):
             return url
+        opener = urllib.request.build_opener(SafeRedirectHandler)
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with urllib.request.urlopen(req, timeout=4) as resp:
+        with opener.open(req, timeout=4) as resp:
             target = resp.geturl()
-            if re.match(r"^https?://", target, re.I):
+            if is_safe_target_url(target):
                 return target
             return url
     except Exception:
@@ -276,7 +312,10 @@ def clean_url(raw: str, preserve_params: list | None = None, unshorten: bool = F
             continue
         key = part.split("=")[0]
         if is_tracking_param(key, hostname, preserve_set):
-            removed.append(key)
+            try:
+                removed.append(urllib.parse.unquote(key))
+            except Exception:
+                removed.append(key)
         else:
             kept_parts.append(part)
 
@@ -319,7 +358,7 @@ def set_clipboard(text: str) -> bool:
         return False
 
 def open_in_browser(url: str):
-    subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["xdg-open", "--", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def render_terminal_qr(text: str):
     try:

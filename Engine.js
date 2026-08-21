@@ -106,8 +106,8 @@ function isUrl(text) {
   if (/\s/.test(trimmed)) return false; // URLs cannot contain whitespace
   if (/[<>"'`\\^|]/.test(trimmed)) return false; // Reject HTML/markup and unsafe characters
 
-  var urlPattern = /^(?:https?|ftps?):\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:\/[^\s<>"'`\\^|]*)?$/i;
-  var bareDomainPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s<>"'`\\^|]*)?$/i;
+  var urlPattern = /^(?:https?|ftps?):\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>"'`\\^|]*)?$/i;
+  var bareDomainPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:[/?#][^\s<>"'`\\^|]*)?$/i;
 
   return urlPattern.test(trimmed) || bareDomainPattern.test(trimmed);
 }
@@ -124,7 +124,7 @@ function extractUrl(text) {
     }
     return trimmed;
   }
-  var match = text.match(/https?:\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:\/[^\s<>"'`\\^|]*)?/i);
+  var match = text.match(/https?:\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>"'`\\^|]*)?/i);
   if (match && isUrl(match[0])) {
     return match[0];
   }
@@ -203,8 +203,12 @@ function unwrapRedirect(url) {
       if (wrapper.directQuery) {
         var idx = url.indexOf("?");
         if (idx >= 0 && idx < url.length - 1) {
-          var target = url.slice(idx + 1);
-          if (isUrl(target)) return decodeURIComponent(target);
+          var rawTarget = url.slice(idx + 1);
+          var target = rawTarget;
+          try {
+            target = decodeURIComponent(rawTarget);
+          } catch (e) {}
+          if (isUrl(target)) return target;
         }
       } else if (wrapper.param) {
         var qIdx = url.indexOf("?");
@@ -240,7 +244,11 @@ function getHostname(url) {
  */
 function isTrackingParam(key, hostname, preserveParams) {
   if (!key) return false;
-  var lowerKey = key.toLowerCase();
+  var decodedKey = key;
+  try {
+    decodedKey = decodeURIComponent(key);
+  } catch (e) {}
+  var lowerKey = decodedKey.toLowerCase();
 
   // Whitelist check
   if (preserveParams && Array.isArray(preserveParams)) {
@@ -431,7 +439,9 @@ function cleanUrl(rawInput, options) {
   for (var i = 0; i < params.length; i++) {
     var p = params[i];
     if (isTrackingParam(p.key, hostname, preserveParams)) {
-      removed.push(p.key);
+      var decodedName = p.key;
+      try { decodedName = decodeURIComponent(p.key); } catch (e) {}
+      removed.push(decodedName);
     } else {
       keptParams.push(p);
     }

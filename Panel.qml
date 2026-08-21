@@ -86,7 +86,7 @@ Panel {
   function unshortenCurrentUrl() {
     if (!root.cleanedUrl) return
     unshortenProc.running = false
-    unshortenProc.command = ["curl", "-s", "-L", "--proto", "=http,https", "-o", "/dev/null", "-w", "%{url_effective}", "--max-time", "4", "--", root.cleanedUrl]
+    unshortenProc.command = ["curl", "-s", "-L", "--proto", "=http,https", "--max-redirs", "5", "-o", "/dev/null", "-w", "%{url_effective}", "--max-time", "4", "--", root.cleanedUrl]
     unshortenProc.running = true
   }
 
@@ -176,7 +176,7 @@ Panel {
 
   function openInBrowser() {
     if (!root.hasUrl || !root.cleanedUrl) return
-    Quickshell.execDetached(["xdg-open", root.cleanedUrl])
+    Quickshell.execDetached(["xdg-open", "--", root.cleanedUrl])
     root.close()
   }
 

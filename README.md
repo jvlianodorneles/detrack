@@ -77,7 +77,7 @@ DeTrack supports customizable settings in your Omarchy bar configuration (`~/.co
 
 ## 🧪 Testing
 
-Run the automated test suite covering 24 unit tests:
+Run the automated test suite covering 29 unit tests:
 ```bash
 node tests/test_engine.js
 ```
