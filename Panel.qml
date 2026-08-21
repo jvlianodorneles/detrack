@@ -288,7 +288,7 @@ Panel {
         // ------------------------------------------------ QR Code Card
         Rectangle {
           Layout.fillWidth: true
-          Layout.fillHeight: true
+          Layout.preferredHeight: Style.space(200)
           radius: Style.cornerRadius
           color: Util.alpha(Color.background, 0.5)
 
