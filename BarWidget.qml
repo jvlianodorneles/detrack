@@ -12,11 +12,46 @@ BarWidget {
 
   readonly property bool showTrackerBadge: setting("showTrackerBadge", false)
   readonly property string iconStyle: setting("iconStyle", "shield")
+  readonly property bool autoCleanClipboard: setting("autoCleanClipboard", false)
+  readonly property var preserveParams: setting("preserveParams", [])
 
   property int lastTrackersRemoved: 0
   property string lastCleanedUrl: ""
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+
+  // Background monitor for optional Auto-Clean clipboard mode
+  property FileView autoCleanHistoryFile: FileView {
+    path: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
+    watchChanges: root.autoCleanClipboard
+    printErrors: false
+    onFileChanged: {
+      if (root.autoCleanClipboard) {
+        root.checkAndAutoClean()
+      }
+    }
+  }
+
+  function checkAndAutoClean() {
+    try {
+      var raw = autoCleanHistoryFile.text()
+      if (!raw) return
+      var hist = JSON.parse(raw)
+      if (hist && Array.isArray(hist) && hist.length > 0) {
+        var item = hist[0]
+        if (item && item.type === "text" && item.text) {
+          var res = Engine.cleanUrl(item.text, { preserveParams: root.preserveParams })
+          if (res.isValid && res.trackersCount > 0 && res.cleanedUrl !== item.text) {
+            root.lastTrackersRemoved = res.trackersCount
+            root.lastCleanedUrl = res.cleanedUrl
+            Quickshell.execDetached(["wl-copy", res.cleanedUrl])
+            var notifMsg = "Auto-cleaned " + res.trackersCount + " tracker" + (res.trackersCount > 1 ? "s" : "") + " (" + res.charsSaved + " chars saved)"
+            Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack Auto-Cleaned", notifMsg + "\n" + res.cleanedUrl])
+          }
+        }
+      }
+    } catch (e) {}
+  }
 
   function open() {
     if (panelLoader.item) {
@@ -62,7 +97,7 @@ BarWidget {
       onStreamFinished: {
         var raw = String(text || "").trim()
         if (raw.length > 0) {
-          var res = Engine.cleanUrl(raw)
+          var res = Engine.cleanUrl(raw, { preserveParams: root.preserveParams })
           if (res.isValid) {
             root.lastTrackersRemoved = res.trackersCount
             root.lastCleanedUrl = res.cleanedUrl

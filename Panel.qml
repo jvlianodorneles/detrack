@@ -21,16 +21,23 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   // State
+  property var settings: null
   property string originalUrl: ""
   property string cleanedUrl: ""
   property var trackersRemoved: []
   property int trackersCount: 0
   property int charsSaved: 0
   property string domain: ""
+  property bool isShortener: false
+  property bool showTrackerDetails: false
   property bool hasUrl: false
   property bool isCopied: false
   property var qrMatrix: []
   readonly property int qrSize: (qrMatrix && qrMatrix.length) ? qrMatrix.length : 0
+
+  function getPreserveParams() {
+    return (root.settings && Array.isArray(root.settings.preserveParams)) ? root.settings.preserveParams : []
+  }
 
   // Instant synchronous sync from Omarchy clipboard history
   property FileView historyFile: FileView {
@@ -57,6 +64,30 @@ Panel {
         }
       }
     }
+  }
+
+  // Async Unshortener Process
+  Process {
+    id: unshortenProc
+    running: false
+    command: []
+    stdout: StdioCollector {
+      id: unshortenStdout
+      waitForEnd: true
+      onStreamFinished: {
+        var resolved = String(text || "").trim()
+        if (resolved.length > 0 && resolved !== root.cleanedUrl) {
+          root.processInput(resolved)
+        }
+      }
+    }
+  }
+
+  function unshortenCurrentUrl() {
+    if (!root.cleanedUrl) return
+    unshortenProc.running = false
+    unshortenProc.command = ["curl", "-s", "-L", "-o", "/dev/null", "-w", "%{url_effective}", "--max-time", "4", root.cleanedUrl]
+    unshortenProc.running = true
   }
 
   function readHistoryFileSync() {
@@ -96,11 +127,13 @@ Panel {
       root.trackersCount = 0
       root.charsSaved = 0
       root.domain = ""
+      root.isShortener = false
+      root.showTrackerDetails = false
       root.qrMatrix = []
       return
     }
 
-    var res = Engine.cleanUrl(rawText)
+    var res = Engine.cleanUrl(rawText, { preserveParams: root.getPreserveParams() })
     if (res.isValid && res.cleanedUrl && res.cleanedUrl.length > 0) {
       root.hasUrl = true
       root.originalUrl = res.originalUrl
@@ -109,6 +142,7 @@ Panel {
       root.trackersCount = res.trackersCount
       root.charsSaved = res.charsSaved
       root.domain = res.domain
+      root.isShortener = res.isShortener
 
       try {
         root.qrMatrix = QRCodeLib.generateMatrix(res.cleanedUrl, "M")
@@ -127,6 +161,8 @@ Panel {
       root.trackersCount = 0
       root.charsSaved = 0
       root.domain = ""
+      root.isShortener = false
+      root.showTrackerDetails = false
       root.qrMatrix = []
     }
   }
@@ -350,30 +386,157 @@ Panel {
           }
         }
 
-        // ------------------------------------------------ Tracker Info Counter
-        RowLayout {
-          visible: root.hasUrl
+        // ------------------------------------------------ Shortlink Expand Button (if shortener detected)
+        Rectangle {
+          visible: root.hasUrl && root.isShortener
           Layout.fillWidth: true
-          Layout.preferredHeight: Style.space(18)
-          spacing: Style.space(6)
+          Layout.preferredHeight: Style.space(22)
+          radius: Style.cornerRadius
+          color: unshortenMouseArea.pressed ? Util.alpha(Color.accent, 0.25) : (unshortenMouseArea.containsMouse ? Util.alpha(Color.accent, 0.15) : Util.alpha(Color.accent, 0.08))
+          border.color: Util.alpha(Color.accent, 0.3)
+          border.width: 1
 
-          Item { Layout.fillWidth: true }
+          RowLayout {
+            anchors.centerIn: parent
+            spacing: Style.space(5)
 
-          Text {
-            text: root.trackersCount > 0
-              ? ("󰒃 " + root.trackersCount + " TRACKER" + (root.trackersCount > 1 ? "S" : "") + " REMOVED" + (root.charsSaved > 0 ? " (-" + root.charsSaved + " chars)" : ""))
-              : "󰄬 URL IS CLEAN"
-            color: root.trackersCount > 0 ? Color.accent : Color.popups.text
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
-            font.letterSpacing: 1
-            horizontalAlignment: Text.AlignHCenter
+            Text {
+              text: unshortenProc.running ? "󰑮" : "󰌹"
+              color: Color.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
 
-            Behavior on opacity { NumberAnimation { duration: 150 } }
+            Text {
+              text: unshortenProc.running ? "EXPANDING SHORTLINK..." : "EXPAND SHORTLINK"
+              color: Color.accent
+              font.family: "Monospace, monospace"
+              font.bold: true
+              font.pixelSize: Style.font.caption - 1
+              font.letterSpacing: 1
+            }
           }
 
-          Item { Layout.fillWidth: true }
+          MouseArea {
+            id: unshortenMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            enabled: !unshortenProc.running
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.unshortenCurrentUrl()
+          }
+
+          PanelToolTip {
+            id: unshortenToolTip
+            visible: unshortenMouseArea.containsMouse
+            text: "Resolve destination URL and clean downstream trackers"
+            contentItem: Text {
+              text: unshortenToolTip.text
+              textFormat: Text.PlainText
+              color: unshortenToolTip.panelForeground
+              font.family: unshortenToolTip.fontFamily
+              font.pixelSize: unshortenToolTip.fontSize
+              leftPadding: Border.left(unshortenToolTip.panelBorderSpec) + Style.spacing.controlPaddingX
+              rightPadding: Border.right(unshortenToolTip.panelBorderSpec) + Style.spacing.controlPaddingX
+              topPadding: Border.top(unshortenToolTip.panelBorderSpec) + Style.spacing.controlPaddingY
+              bottomPadding: Border.bottom(unshortenToolTip.panelBorderSpec) + Style.spacing.controlPaddingY
+            }
+          }
+        }
+
+        // ------------------------------------------------ Tracker Info Counter & Detail Toggle
+        Rectangle {
+          visible: root.hasUrl
+          Layout.fillWidth: true
+          Layout.preferredHeight: Style.space(22)
+          radius: Style.cornerRadius
+          color: trackerMouseArea.pressed ? Util.alpha(Color.foreground, 0.1) : (trackerMouseArea.containsMouse ? Util.alpha(Color.foreground, 0.05) : "transparent")
+
+          RowLayout {
+            anchors.centerIn: parent
+            spacing: Style.space(6)
+
+            Text {
+              text: root.trackersCount > 0
+                ? ("󰒃 " + root.trackersCount + " TRACKER" + (root.trackersCount > 1 ? "S" : "") + " REMOVED" + (root.charsSaved > 0 ? " (-" + root.charsSaved + " chars)" : ""))
+                : "󰄬 URL IS CLEAN"
+              color: root.trackersCount > 0 ? Color.accent : Color.popups.text
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              font.letterSpacing: 1
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Text {
+              visible: root.trackersCount > 0
+              text: root.showTrackerDetails ? "󰅃" : "󰅀"
+              color: Color.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
+
+          MouseArea {
+            id: trackerMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            enabled: root.trackersCount > 0
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: {
+              if (root.trackersCount > 0) {
+                root.showTrackerDetails = !root.showTrackerDetails
+              }
+            }
+          }
+
+          PanelToolTip {
+            id: trackerCountToolTip
+            visible: trackerMouseArea.containsMouse && root.trackersCount > 0
+            text: root.showTrackerDetails ? "Click to collapse tracker list" : "Click to view removed tracker parameters"
+            contentItem: Text {
+              text: trackerCountToolTip.text
+              textFormat: Text.PlainText
+              color: trackerCountToolTip.panelForeground
+              font.family: trackerCountToolTip.fontFamily
+              font.pixelSize: trackerCountToolTip.fontSize
+              leftPadding: Border.left(trackerCountToolTip.panelBorderSpec) + Style.spacing.controlPaddingX
+              rightPadding: Border.right(trackerCountToolTip.panelBorderSpec) + Style.spacing.controlPaddingX
+              topPadding: Border.top(trackerCountToolTip.panelBorderSpec) + Style.spacing.controlPaddingY
+              bottomPadding: Border.bottom(trackerCountToolTip.panelBorderSpec) + Style.spacing.controlPaddingY
+            }
+          }
+        }
+
+        // ------------------------------------------------ Collapsible Tracker Tags Flow
+        Flow {
+          visible: root.hasUrl && root.showTrackerDetails && root.trackersCount > 0
+          Layout.fillWidth: true
+          spacing: Style.space(4)
+
+          Repeater {
+            model: root.trackersRemoved
+
+            Rectangle {
+              required property string modelData
+              height: Style.space(18)
+              width: tagLabel.implicitWidth + Style.space(12)
+              radius: Style.space(9)
+              color: Util.alpha(Color.accent, 0.12)
+              border.color: Util.alpha(Color.accent, 0.3)
+              border.width: 1
+
+              Text {
+                id: tagLabel
+                anchors.centerIn: parent
+                text: parent.modelData
+                color: Color.accent
+                font.family: "Monospace, monospace"
+                font.pixelSize: Style.font.caption - 2
+                font.bold: true
+              }
+            }
+          }
         }
 
         PanelSeparator {

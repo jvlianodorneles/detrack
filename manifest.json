@@ -20,7 +20,9 @@
     "defaultSection": "right",
     "defaults": {
       "showTrackerBadge": false,
-      "iconStyle": "shield"
+      "iconStyle": "shield",
+      "autoCleanClipboard": false,
+      "preserveParams": []
     },
     "schema": [
       {
@@ -41,6 +43,20 @@
         ],
         "defaultValue": "shield",
         "description": "Icon displayed on the status bar (󰒃 Shield, 󰌹 Link, 󰐳 QR Code)."
+      },
+      {
+        "key": "autoCleanClipboard",
+        "type": "boolean",
+        "label": "Auto-Clean Clipboard",
+        "defaultValue": false,
+        "description": "Automatically clean URLs copied anywhere on your system in the background."
+      },
+      {
+        "key": "preserveParams",
+        "type": "array",
+        "label": "Preserve Parameters Whitelist",
+        "defaultValue": [],
+        "description": "List of query parameter names to never strip (e.g. specific affiliate IDs or partner tags)."
       }
     ]
   }

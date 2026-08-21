@@ -11,6 +11,7 @@ import json
 import argparse
 import subprocess
 import urllib.parse
+import urllib.request
 
 GLOBAL_TRACKING_PARAMS = {
     # Google / Analytics / Ads
@@ -33,19 +34,22 @@ GLOBAL_TRACKING_PARAMS = {
     # Microsoft / Bing
     "msclkid", "cvid", "ocid",
 
-    # Yandex & Mail.ru
-    "yclid", "ym_debug", "_openstat",
+    # Yandex, Yahoo & Mail.ru
+    "yclid", "ym_debug", "_openstat", "guccounter", "guce_referrer", "guce_referrer_usqp",
 
-    # General Marketing / Affiliate / CRM
+    # General Marketing / Affiliate / CRM / Ads
     "wickedid", "wt_mc", "wt_zmc", "vero_id", "vero_conv", "nr_email_referer",
     "sc_campaign", "sc_channel", "sc_content", "sc_country", "sc_geo", "sc_medium",
     "sc_outcome", "sc_params", "sc_publisher", "sc_segment", "sc_term", "sc_cid",
     "trk_contact", "trk_msg", "trk_module", "trk_sid",
     "matomo_campaign", "matomo_kwd", "mtm_campaign", "mtm_kwd",
     "pk_campaign", "pk_kwd", "piwik_campaign", "piwik_kwd",
-    "zanpid", "clickref", "click_id", "aff_trace_key", "aff_platform", "aff_fcid", "aff_fsk",
+    "zanpid", "clickref", "click_id", "clickid", "aff_trace_key", "aff_platform", "aff_fcid", "aff_fsk", "afftrack",
     "spm", "scm", "algo_pvid", "algo_expid", "btsid", "ws_ab_test",
-    "share_id", "trackingId", "refId", "trkEmail", "midToken", "midSig", "lipi", "licu"
+    "share_id", "trackingId", "refId", "trkEmail", "midToken", "midSig", "lipi", "licu",
+    "vgo_ee", "mbid", "cmpid", "bta_c", "bta_tid", "esheet", "irgwc", "irclickid", "rb_clickid",
+    "s_cid", "elqTrackId", "elqTrack", "recipient_id",
+    "hsa_cam", "hsa_grp", "hsa_mt", "hsa_src", "hsa_ad", "hsa_acc", "hsa_net", "hsa_kw", "hsa_tgt", "hsa_ver"
 }
 
 DOMAIN_SPECIFIC_PARAMS = {
@@ -59,6 +63,11 @@ DOMAIN_SPECIFIC_PARAMS = {
     "open.spotify.com": {"si", "context", "nd", "pt"},
     "linkedin.com": {"trk", "refId", "trackingId", "midToken"},
     "aliexpress.com": {"spm", "scm", "aff_fcid", "aff_fsk", "aff_platform", "aff_trace_key"},
+    "twitch.tv": {"tt_medium", "tt_content", "sr"},
+    "steampowered.com": {"snr", "curator_clanid"},
+    "bilibili.com": {"spm_id_from", "from_source", "from", "seid"},
+    "medium.com": {"source", "postPublishedGoogleUrl"},
+    "substack.com": {"utm_source", "utm_medium", "utm_campaign", "publication_id", "post_id", "r"},
     "mercadolivre.com.br": {
         "pdp_filters", "from", "matt_tool", "matt_word", "matt_source", "matt_campaign_id",
         "matt_ad_group_id", "matt_match_type", "matt_network", "matt_device", "matt_creative",
@@ -78,6 +87,12 @@ DOMAIN_SPECIFIC_PARAMS = {
     }
 }
 
+SHORTENER_DOMAINS = {
+    "bit.ly", "tinyurl.com", "t.co", "cutt.ly", "is.gd", "buff.ly", "trib.al",
+    "qr.ae", "rb.gy", "shorturl.at", "ow.ly", "goo.gl", "rebrand.ly", "bl.ink",
+    "tiny.cc", "s.id", "clck.ru", "snip.ly"
+}
+
 REDIRECT_PATTERNS = [
     (re.compile(r"^https?://(?:www\.)?google\.[a-z.]+/url\?", re.I), "q"),
     (re.compile(r"^https?://(?:www\.)?google\.[a-z.]+/url\?", re.I), "url"),
@@ -92,7 +107,7 @@ def is_url(text: str) -> bool:
     if not text or not isinstance(text, str):
         return False
     t = text.strip()
-    if len(t) < 4 or any(c.isspace() for c in t):
+    if len(t) < 4 or len(t) > 8192 or any(c.isspace() for c in t):
         return False
     return bool(re.match(r"^(https?://|ftps?://|mailto:)", t, re.I) or
                 re.match(r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/[^\s]*)?$", t, re.I))
@@ -107,6 +122,12 @@ def extract_url(text: str) -> str:
         return t
     m = re.search(r"https?://[^\s\"'<>\(\)]+", text, re.I)
     return m.group(0) if m else ""
+
+def is_shortener_domain(hostname: str) -> bool:
+    if not hostname:
+        return False
+    h = hostname.lower().replace("www.", "")
+    return h in SHORTENER_DOMAINS or any(h.endswith("." + s) for s in SHORTENER_DOMAINS)
 
 def unwrap_redirect(url: str) -> tuple[str, bool]:
     for pattern, param in REDIRECT_PATTERNS:
@@ -131,13 +152,29 @@ def normalize_amazon(url: str) -> str | None:
         return f"https://www.amazon.{m.group(1)}/dp/{m.group(2)}"
     return None
 
-def is_tracking_param(key: str, hostname: str) -> bool:
+def normalize_youtube_shorts(url: str) -> str | None:
+    m = re.match(r"^(https?://(?:www\.)?youtube\.com)/shorts/([a-zA-Z0-9_-]{11})([^#?]*)(.*)$", url, re.I)
+    if m:
+        domain, video_id, _, rest = m.groups()
+        hash_idx = rest.find("#")
+        query = rest[:hash_idx] if hash_idx >= 0 else rest
+        frag = rest[hash_idx:] if hash_idx >= 0 else ""
+        if query and len(query) > 1:
+            return f"{domain}/watch?v={video_id}&{query[1:]}{frag}"
+        return f"{domain}/watch?v={video_id}{frag}"
+    return None
+
+def is_tracking_param(key: str, hostname: str, preserve_params: set | None = None) -> bool:
     lk = key.lower()
+    if preserve_params and lk in preserve_params:
+        return False
+
     if (lk.startswith("utm_") or lk.startswith("matt_") or lk.startswith("cq_") or
         lk.startswith("gad_") or lk.startswith("gcl") or lk.startswith("mc_") or
         lk.startswith("sc_") or lk.startswith("pk_") or lk.startswith("piwik_") or
         lk.startswith("matomo_") or lk.startswith("mtm_") or lk.startswith("wt_") or
-        lk.startswith("vero_") or lk.startswith("fb_") or lk.startswith("tw_")):
+        lk.startswith("vero_") or lk.startswith("fb_") or lk.startswith("tw_") or
+        lk.startswith("hsa_")):
         return True
 
     if lk in GLOBAL_TRACKING_PARAMS:
@@ -152,7 +189,16 @@ def is_tracking_param(key: str, hostname: str) -> bool:
                     return True
     return False
 
-def clean_url(raw: str) -> dict:
+def unshorten_url(url: str) -> str:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            return resp.geturl()
+    except Exception:
+        return url
+
+def clean_url(raw: str, preserve_params: list | None = None, unshorten: bool = False) -> dict:
+    preserve_set = {p.lower() for p in preserve_params} if preserve_params else set()
     res = {
         "is_valid": False,
         "original_url": (raw or "").strip(),
@@ -161,6 +207,7 @@ def clean_url(raw: str) -> dict:
         "trackers_count": 0,
         "chars_saved": 0,
         "domain": "",
+        "is_shortener": False,
         "message": ""
     }
     extracted = extract_url(raw)
@@ -171,6 +218,16 @@ def clean_url(raw: str) -> dict:
     current = extracted
     if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", current, re.I):
         current = "https://" + current
+
+    parsed_initial = urllib.parse.urlparse(current)
+    initial_host = parsed_initial.netloc.lower()
+    res["is_shortener"] = is_shortener_domain(initial_host)
+
+    if unshorten and res["is_shortener"]:
+        resolved = unshorten_url(current)
+        if resolved != current:
+            res["trackers_removed"].append("unshortened")
+            current = resolved
 
     unwrapped, did_unwrap = unwrap_redirect(current)
     if did_unwrap:
@@ -189,9 +246,15 @@ def clean_url(raw: str) -> dict:
         res["message"] = "Normalized Amazon product URL"
         return res
 
+    yt_norm = normalize_youtube_shorts(current)
+    if yt_norm:
+        res["trackers_removed"].append("youtube_shorts")
+        current = yt_norm
+
     parsed = urllib.parse.urlparse(current)
     hostname = parsed.netloc.lower()
     res["domain"] = hostname
+    res["is_shortener"] = is_shortener_domain(hostname)
 
     # Parse query params preserving order
     query_parts = parsed.query.split("&") if parsed.query else []
@@ -202,7 +265,7 @@ def clean_url(raw: str) -> dict:
         if not part:
             continue
         key = part.split("=")[0]
-        if is_tracking_param(key, hostname):
+        if is_tracking_param(key, hostname, preserve_set):
             removed.append(key)
         else:
             kept_parts.append(part)
@@ -260,6 +323,8 @@ def main():
     parser.add_argument("-c", "--clipboard", action="store_true", help="Read URL from clipboard, clean it, and copy back")
     parser.add_argument("-b", "--browse", action="store_true", help="Open cleaned URL in default web browser")
     parser.add_argument("-q", "--qr", action="store_true", help="Display QR code in terminal")
+    parser.add_argument("-u", "--unshorten", action="store_true", help="Resolve and expand shortened URLs (bit.ly, t.co, etc.)")
+    parser.add_argument("-p", "--preserve", nargs="*", help="Whitelist parameters to preserve (e.g. --preserve ref tag)")
     parser.add_argument("--json", action="store_true", help="Output JSON results")
 
     args = parser.parse_args()
@@ -280,7 +345,7 @@ def main():
             parser.print_help()
             sys.exit(0)
 
-    res = clean_url(input_text)
+    res = clean_url(input_text, preserve_params=args.preserve, unshorten=args.unshorten)
 
     if args.json:
         print(json.dumps(res, indent=2))
@@ -309,3 +374,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

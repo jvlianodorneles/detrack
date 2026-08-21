@@ -17,10 +17,14 @@
 ## ✨ Features
 
 - 🧹 **Pure JavaScript Sanitization Engine (`Engine.js`)**:
-  - Global tracking parameters (`utm_*`, `gclid`, `fbclid`, `_ga`, `mc_eid`, `mkt_tok`, etc.).
+  - Global tracking parameters (`utm_*`, `gclid`, `fbclid`, `_ga`, `mc_eid`, `mkt_tok`, `vgo_ee`, `hsa_*`, etc.).
   - E-commerce & Shopping filters (`matt_*`, `cq_*`, `gad_*`, `pdp_filters`, `from=gshop`, Amazon canonical `/dp/ASIN`).
-  - Social media trackers (YouTube `si`/`feature`, Twitter/X `s`/`t`, TikTok, Instagram, Spotify).
+  - Social media trackers (YouTube `si`/`feature`, Twitter/X `s`/`t`, TikTok, Instagram, Spotify, Twitch, Steam, Substack).
+  - YouTube Shorts normalization (`/shorts/ID` -> canonical `/watch?v=ID`).
   - Unwraps Google (`google.com/url?q=`), Facebook (`l.facebook.com/l.php?u=`), and Reddit redirects.
+- 🔍 **Interactive Tracker Breakdown & Shortlink Resolution**:
+  - Click on the tracker badge to expand interactive tags showing each parameter stripped.
+  - Detects shortener links (`bit.ly`, `t.co`, `tinyurl`) and offers 1-click on-demand unshortening.
 - 📱 **Instant Native QR Code (`QRCode.js`)**:
   - Full 40-version Reed-Solomon support.
   - Native integer-module grid rendering for crisp, pixel-perfect camera scanning without blurry rasterization.
@@ -34,7 +38,7 @@
   - `Tab` / `Shift+Tab`: Switch between bar panels.
   - `Esc`: Close popup.
 - 💻 **Standalone CLI Tool (`detrack`)**:
-  - Clean URLs directly in your terminal or scripts via `detrack --clipboard --qr`.
+  - Clean URLs directly in your terminal or scripts via `detrack --clipboard --qr`, with support for `--unshorten` and `--preserve`.
 
 ---
 
@@ -66,12 +70,14 @@ DeTrack supports customizable settings in your Omarchy bar configuration (`~/.co
 |---|---|---|---|
 | `showTrackerBadge` | `boolean` | `false` | Displays the number of stripped trackers directly on the bar icon. |
 | `iconStyle` | `enum` | `"shield"` | Bar icon style (`"shield"`: 󰒃, `"link"`: 󰌹, `"qrcode"`: 󰐳). |
+| `autoCleanClipboard` | `boolean` | `false` | Silently clean URLs copied anywhere on your system in background. |
+| `preserveParams` | `string[]` | `[]` | Whitelist of query parameters to never strip (e.g. `["ref", "tag"]`). |
 
 ---
 
 ## 🧪 Testing
 
-Run the automated test suite covering 19 unit tests:
+Run the automated test suite covering 24 unit tests:
 ```bash
 node tests/test_engine.js
 ```

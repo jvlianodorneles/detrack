@@ -199,5 +199,55 @@ test("Generates QR code matrix correctly for both short and long text", () => {
   assert(longMatrix.length > 50);
 });
 
+// 20. YouTube Shorts normalization
+test("Normalizes YouTube Shorts to standard watch URL", () => {
+  const dirty = "https://www.youtube.com/shorts/dQw4w9WgXcQ?si=abcdef&feature=share";
+  const res = Engine.cleanUrl(dirty);
+  assert.strictEqual(res.isValid, true);
+  assert.strictEqual(res.cleanedUrl, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  assert(res.trackersRemoved.includes("youtube_shorts"));
+  assert(res.trackersRemoved.includes("si"));
+});
+
+// 21. Steam and Twitch trackers
+test("Strips Steam and Twitch tracking parameters", () => {
+  const steamDirty = "https://store.steampowered.com/app/1091500/Cyberpunk_2077/?snr=1_4_4__118";
+  const steamRes = Engine.cleanUrl(steamDirty);
+  assert.strictEqual(steamRes.cleanedUrl, "https://store.steampowered.com/app/1091500/Cyberpunk_2077/");
+
+  const twitchDirty = "https://www.twitch.tv/directory/game/Minecraft?tt_medium=app&tt_content=share";
+  const twitchRes = Engine.cleanUrl(twitchDirty);
+  assert.strictEqual(twitchRes.cleanedUrl, "https://www.twitch.tv/directory/game/Minecraft");
+});
+
+// 22. Newsletter & CRM tokens
+test("Strips Newsletter and CRM click trackers", () => {
+  const dirty = "https://example.com/blog?vgo_ee=abcdef&mbid=synd_123&mc_cid=98765&hsa_cam=456";
+  const res = Engine.cleanUrl(dirty);
+  assert.strictEqual(res.cleanedUrl, "https://example.com/blog");
+  assert.strictEqual(res.trackersCount, 4);
+});
+
+// 23. Whitelist / preserveParams support
+test("Preserves whitelisted parameters with preserveParams option", () => {
+  const dirty = "https://example.com/item?utm_source=twitter&ref=creator123&tag=mypartner";
+  const res = Engine.cleanUrl(dirty, { preserveParams: ["ref", "tag"] });
+  assert.strictEqual(res.cleanedUrl, "https://example.com/item?ref=creator123&tag=mypartner");
+  assert.strictEqual(res.trackersCount, 1);
+  assert(res.trackersRemoved.includes("utm_source"));
+});
+
+// 24. Shortener domain detection
+test("Identifies known shortener domains", () => {
+  const res1 = Engine.cleanUrl("https://bit.ly/3xYz123");
+  assert.strictEqual(res1.isShortener, true);
+
+  const res2 = Engine.cleanUrl("https://t.co/abc123xyz");
+  assert.strictEqual(res2.isShortener, true);
+
+  const res3 = Engine.cleanUrl("https://github.com/torvalds/linux");
+  assert.strictEqual(res3.isShortener, false);
+});
+
 console.log(`\nResults: ${passed} / ${total} tests passed.`);
 if (passed !== total) process.exit(1);

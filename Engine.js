@@ -23,19 +23,22 @@ var GLOBAL_TRACKING_PARAMS = [
   // Microsoft / Bing
   "msclkid", "cvid", "ocid",
 
-  // Yandex & Mail.ru
-  "yclid", "ym_debug", "_openstat",
+  // Yandex, Yahoo & Mail.ru
+  "yclid", "ym_debug", "_openstat", "guccounter", "guce_referrer", "guce_referrer_usqp",
 
-  // General Marketing / Email / CRM / Ads
+  // General Marketing / Email / CRM / Affiliate / Ads
   "wickedid", "wt_mc", "wt_zmc", "vero_id", "vero_conv", "nr_email_referer",
   "sc_campaign", "sc_channel", "sc_content", "sc_country", "sc_geo", "sc_medium",
   "sc_outcome", "sc_params", "sc_publisher", "sc_segment", "sc_term", "sc_cid",
   "trk_contact", "trk_msg", "trk_module", "trk_sid",
   "matomo_campaign", "matomo_kwd", "mtm_campaign", "mtm_kwd",
   "pk_campaign", "pk_kwd", "piwik_campaign", "piwik_kwd",
-  "zanpid", "clickref", "click_id", "aff_trace_key", "aff_platform", "aff_fcid", "aff_fsk",
+  "zanpid", "clickref", "click_id", "clickid", "aff_trace_key", "aff_platform", "aff_fcid", "aff_fsk", "afftrack",
   "spm", "scm", "algo_pvid", "algo_expid", "btsid", "ws_ab_test",
-  "share_id", "trackingId", "refId", "trkEmail", "midToken", "midSig", "lipi", "licu"
+  "share_id", "trackingId", "refId", "trkEmail", "midToken", "midSig", "lipi", "licu",
+  "vgo_ee", "mbid", "cmpid", "bta_c", "bta_tid", "esheet", "irgwc", "irclickid", "rb_clickid",
+  "s_cid", "elqTrackId", "elqTrack", "recipient_id",
+  "hsa_cam", "hsa_grp", "hsa_mt", "hsa_src", "hsa_ad", "hsa_acc", "hsa_net", "hsa_kw", "hsa_tgt", "hsa_ver"
 ];
 
 // Domain-specific parameter filters
@@ -50,6 +53,11 @@ var DOMAIN_SPECIFIC_PARAMS = {
   "open.spotify.com": ["si", "context", "nd", "pt"],
   "linkedin.com": ["trk", "refId", "trackingId", "midToken"],
   "aliexpress.com": ["spm", "scm", "aff_fcid", "aff_fsk", "aff_platform", "aff_trace_key"],
+  "twitch.tv": ["tt_medium", "tt_content", "sr"],
+  "steampowered.com": ["snr", "curator_clanid"],
+  "bilibili.com": ["spm_id_from", "from_source", "from", "seid"],
+  "medium.com": ["source", "postPublishedGoogleUrl"],
+  "substack.com": ["utm_source", "utm_medium", "utm_campaign", "publication_id", "post_id", "r"],
   "mercadolivre.com.br": [
     "pdp_filters", "from", "matt_tool", "matt_word", "matt_source", "matt_campaign_id",
     "matt_ad_group_id", "matt_match_type", "matt_network", "matt_device", "matt_creative",
@@ -68,6 +76,13 @@ var DOMAIN_SPECIFIC_PARAMS = {
     "pf_rd_m", "pf_rd_s", "pf_rd_t", "pf_rd_i", "content-id"
   ]
 };
+
+// Known shortener domains
+var SHORTENER_DOMAINS = [
+  "bit.ly", "tinyurl.com", "t.co", "cutt.ly", "is.gd", "buff.ly", "trib.al",
+  "qr.ae", "rb.gy", "shorturl.at", "ow.ly", "goo.gl", "rebrand.ly", "bl.ink",
+  "tiny.cc", "s.id", "clck.ru", "snip.ly"
+];
 
 // Known redirect wrappers to unwrap
 var REDIRECT_WRAPPERS = [
@@ -107,6 +122,20 @@ function extractUrl(text) {
   }
   var match = text.match(/https?:\/\/[^\s"'<>\(\)]+/i);
   return match ? match[0] : "";
+}
+
+/**
+ * Checks if hostname is a known shortener service.
+ */
+function isShortenerDomain(hostname) {
+  if (!hostname) return false;
+  var h = hostname.toLowerCase().replace(/^www\./, "");
+  for (var i = 0; i < SHORTENER_DOMAINS.length; i++) {
+    if (h === SHORTENER_DOMAINS[i] || h.endsWith("." + SHORTENER_DOMAINS[i])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -202,9 +231,18 @@ function getHostname(url) {
 /**
  * Checks if a parameter key matches known tracking filters for given host.
  */
-function isTrackingParam(key, hostname) {
+function isTrackingParam(key, hostname, preserveParams) {
   if (!key) return false;
   var lowerKey = key.toLowerCase();
+
+  // Whitelist check
+  if (preserveParams && Array.isArray(preserveParams)) {
+    for (var w = 0; w < preserveParams.length; w++) {
+      if (lowerKey === String(preserveParams[w]).toLowerCase()) {
+        return false;
+      }
+    }
+  }
 
   // Known prefix matches
   if (lowerKey.startsWith("utm_") ||
@@ -221,7 +259,8 @@ function isTrackingParam(key, hostname) {
       lowerKey.startsWith("wt_") ||
       lowerKey.startsWith("vero_") ||
       lowerKey.startsWith("fb_") ||
-      lowerKey.startsWith("tw_")) {
+      lowerKey.startsWith("tw_") ||
+      lowerKey.startsWith("hsa_")) {
     return true;
   }
 
@@ -263,11 +302,41 @@ function normalizeAmazonUrl(url) {
 }
 
 /**
+ * Normalizes YouTube shorts to canonical watch URL.
+ */
+function normalizeYouTubeShorts(url) {
+  var m = url.match(/^(https?:\/\/(?:www\.)?youtube\.com)\/shorts\/([a-zA-Z0-9_-]{11})([^#?]*)(.*)$/i);
+  if (m) {
+    var domain = m[1];
+    var videoId = m[2];
+    var rest = m[4] || "";
+    var hashIdx = rest.indexOf("#");
+    var query = "";
+    var hash = "";
+    if (hashIdx >= 0) {
+      hash = rest.slice(hashIdx);
+      query = rest.slice(0, hashIdx);
+    } else {
+      query = rest;
+    }
+    if (query && query.length > 1) {
+      return domain + "/watch?v=" + videoId + "&" + query.slice(1) + hash;
+    }
+    return domain + "/watch?v=" + videoId + hash;
+  }
+  return null;
+}
+
+/**
  * Main URL sanitizing function.
  * @param {string} rawInput - Clipboard text or typed URL.
+ * @param {object} [options] - Optional settings { preserveParams: string[], normalizeShorts: boolean }.
  * @returns {object} Cleaned result object.
  */
-function cleanUrl(rawInput) {
+function cleanUrl(rawInput, options) {
+  var opts = options || {};
+  var preserveParams = opts.preserveParams || [];
+
   var res = {
     isValid: false,
     originalUrl: (rawInput || "").trim(),
@@ -276,6 +345,7 @@ function cleanUrl(rawInput) {
     trackersCount: 0,
     charsSaved: 0,
     domain: "",
+    isShortener: false,
     message: ""
   };
 
@@ -318,6 +388,15 @@ function cleanUrl(rawInput) {
     return res;
   }
 
+  // Check YouTube Shorts normalization (optional/default on)
+  if (opts.normalizeShorts !== false) {
+    var ytNormalized = normalizeYouTubeShorts(currentUrl);
+    if (ytNormalized) {
+      res.trackersRemoved.push("youtube_shorts");
+      currentUrl = ytNormalized;
+    }
+  }
+
   // Split URL into base, query, fragment
   var hashIdx = currentUrl.indexOf("#");
   var fragment = "";
@@ -336,6 +415,7 @@ function cleanUrl(rawInput) {
 
   var hostname = getHostname(baseUrl);
   res.domain = hostname;
+  res.isShortener = isShortenerDomain(hostname);
 
   var params = parseQueryParams(queryString);
   var keptParams = [];
@@ -343,7 +423,7 @@ function cleanUrl(rawInput) {
 
   for (var i = 0; i < params.length; i++) {
     var p = params[i];
-    if (isTrackingParam(p.key, hostname)) {
+    if (isTrackingParam(p.key, hostname, preserveParams)) {
       removed.push(p.key);
     } else {
       keptParams.push(p);
@@ -381,9 +461,12 @@ if (typeof module !== "undefined" && module.exports) {
     cleanUrl: cleanUrl,
     extractUrl: extractUrl,
     isUrl: isUrl,
+    isShortenerDomain: isShortenerDomain,
     unwrapRedirect: unwrapRedirect,
     normalizeAmazonUrl: normalizeAmazonUrl,
+    normalizeYouTubeShorts: normalizeYouTubeShorts,
     GLOBAL_TRACKING_PARAMS: GLOBAL_TRACKING_PARAMS,
-    DOMAIN_SPECIFIC_PARAMS: DOMAIN_SPECIFIC_PARAMS
+    DOMAIN_SPECIFIC_PARAMS: DOMAIN_SPECIFIC_PARAMS,
+    SHORTENER_DOMAINS: SHORTENER_DOMAINS
   };
 }
