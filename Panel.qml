@@ -86,7 +86,7 @@ Panel {
   function unshortenCurrentUrl() {
     if (!root.cleanedUrl) return
     unshortenProc.running = false
-    unshortenProc.command = ["curl", "-s", "-L", "-o", "/dev/null", "-w", "%{url_effective}", "--max-time", "4", root.cleanedUrl]
+    unshortenProc.command = ["curl", "-s", "-L", "--proto", "=http,https", "-o", "/dev/null", "-w", "%{url_effective}", "--max-time", "4", "--", root.cleanedUrl]
     unshortenProc.running = true
   }
 
@@ -533,6 +533,7 @@ Panel {
                 id: tagLabel
                 anchors.centerIn: parent
                 text: parent.modelData
+                textFormat: Text.PlainText
                 color: Color.accent
                 font.family: "Monospace, monospace"
                 font.pixelSize: Style.font.caption - 2

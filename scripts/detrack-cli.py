@@ -191,9 +191,14 @@ def is_tracking_param(key: str, hostname: str, preserve_params: set | None = Non
 
 def unshorten_url(url: str) -> str:
     try:
+        if not re.match(r"^https?://", url, re.I):
+            return url
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
         with urllib.request.urlopen(req, timeout=4) as resp:
-            return resp.geturl()
+            target = resp.geturl()
+            if re.match(r"^https?://", target, re.I):
+                return target
+            return url
     except Exception:
         return url
 
