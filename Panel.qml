@@ -461,7 +461,7 @@ Panel {
 
             Text {
               text: root.trackersCount > 0
-                ? ("󰒃 " + root.trackersCount + " TRACKER" + (root.trackersCount > 1 ? "S" : "") + " REMOVED" + (root.charsSaved > 0 ? " (-" + root.charsSaved + " chars)" : ""))
+                ? (root.trackersCount + " TRACKER" + (root.trackersCount > 1 ? "S" : "") + " REMOVED" + (root.charsSaved > 0 ? " (-" + root.charsSaved + " chars)" : ""))
                 : "󰄬 URL IS CLEAN"
               color: root.trackersCount > 0 ? Color.accent : Color.popups.text
               font.family: root.fontFamily
