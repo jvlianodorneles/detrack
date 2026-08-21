@@ -249,5 +249,32 @@ test("Identifies known shortener domains", () => {
   assert.strictEqual(res3.isShortener, false);
 });
 
-console.log(`\nResults: ${passed} / ${total} tests passed.`);
+// 25. Security: Rejects markup-shaped hostname text and HTML tags in URLs
+test("Rejects markup-shaped hostname text and HTML tags in URLs", () => {
+  const evil1 = "https://<b>evil</b>.com/page";
+  const res1 = Engine.cleanUrl(evil1);
+  assert.strictEqual(res1.isValid, false);
+  assert.strictEqual(res1.cleanedUrl, "");
+
+  const evil2 = "http://<img src=x>.com";
+  const res2 = Engine.cleanUrl(evil2);
+  assert.strictEqual(res2.isValid, false);
+  assert.strictEqual(res2.cleanedUrl, "");
+
+  const evil3 = "<b>https://example.com/clean?utm_source=test</b>";
+  const res3 = Engine.cleanUrl(evil3);
+  assert.strictEqual(res3.isValid, true);
+  assert.strictEqual(res3.cleanedUrl, "https://example.com/clean");
+  assert(!res3.cleanedUrl.includes("<"));
+  assert(!res3.cleanedUrl.includes(">"));
+
+  const evil4 = "https://example.com/page?param=<script>alert(1)</script>&utm_source=twitter";
+  const res4 = Engine.cleanUrl(evil4);
+  assert.strictEqual(res4.isValid, true);
+  assert.strictEqual(res4.cleanedUrl, "https://example.com/page?param");
+  assert(!res4.cleanedUrl.includes("<"));
+  assert(!res4.cleanedUrl.includes(">"));
+});
+
+console.log(`\nResults: ${passed} / ${total} tests passed.\n`);
 if (passed !== total) process.exit(1);

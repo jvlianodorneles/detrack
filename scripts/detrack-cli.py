@@ -109,8 +109,11 @@ def is_url(text: str) -> bool:
     t = text.strip()
     if len(t) < 4 or len(t) > 8192 or any(c.isspace() for c in t):
         return False
-    return bool(re.match(r"^(https?://|ftps?://|mailto:)", t, re.I) or
-                re.match(r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/[^\s]*)?$", t, re.I))
+    if re.search(r'[<>\'\"`\\^|]', t):
+        return False
+    url_pattern = r'^(?:https?|ftps?)://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:/[^\s<>\'\"`\\^|]*)?$'
+    bare_domain_pattern = r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:/[^\s<>\'\"`\\^|]*)?$'
+    return bool(re.match(url_pattern, t, re.I) or re.match(bare_domain_pattern, t, re.I))
 
 def extract_url(text: str) -> str:
     if not text:
@@ -120,8 +123,10 @@ def extract_url(text: str) -> str:
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", t, re.I):
             return "https://" + t
         return t
-    m = re.search(r"https?://[^\s\"'<>\(\)]+", text, re.I)
-    return m.group(0) if m else ""
+    m = re.search(r"https?://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:/[^\s<>\'\"`\\^|]*)?", text, re.I)
+    if m and is_url(m.group(0)):
+        return m.group(0)
+    return ""
 
 def is_shortener_domain(hostname: str) -> bool:
     if not hostname:

@@ -32,6 +32,16 @@ BarWidget {
     }
   }
 
+  function escapeMarkup(str) {
+    if (!str) return ""
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+  }
+
   function checkAndAutoClean() {
     try {
       var raw = autoCleanHistoryFile.text()
@@ -46,7 +56,7 @@ BarWidget {
             root.lastCleanedUrl = res.cleanedUrl
             Quickshell.execDetached(["wl-copy", res.cleanedUrl])
             var notifMsg = "Auto-cleaned " + res.trackersCount + " tracker" + (res.trackersCount > 1 ? "s" : "") + " (" + res.charsSaved + " chars saved)"
-            Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack Auto-Cleaned", notifMsg + "\n" + res.cleanedUrl])
+            Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack Auto-Cleaned", root.escapeMarkup(notifMsg + "\n" + res.cleanedUrl)])
           }
         }
       }
@@ -107,7 +117,7 @@ BarWidget {
             var notifMsg = res.trackersCount > 0
               ? ("Removed " + res.trackersCount + " tracker" + (res.trackersCount > 1 ? "s" : "") + " (" + res.charsSaved + " chars saved)")
               : "URL is clean"
-            Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack URL Cleaned", notifMsg + "\n" + res.cleanedUrl])
+            Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack URL Cleaned", root.escapeMarkup(notifMsg + "\n" + res.cleanedUrl)])
           } else {
             Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "dialog-warning", "DeTrack", "Clipboard does not contain a valid URL"])
           }

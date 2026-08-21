@@ -97,15 +97,19 @@ var REDIRECT_WRAPPERS = [
 ];
 
 /**
- * Checks if a string is a candidate URL.
+ * Checks if a string is a candidate URL without markup, control characters, or invalid hostnames.
  */
 function isUrl(text) {
   if (!text || typeof text !== "string") return false;
   var trimmed = text.trim();
   if (trimmed.length < 4 || trimmed.length > 8192) return false;
   if (/\s/.test(trimmed)) return false; // URLs cannot contain whitespace
-  return /^(https?:\/\/|ftps?:\/\/|mailto:)/i.test(trimmed) ||
-         /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/[^\s]*)?$/i.test(trimmed);
+  if (/[<>"'`\\^|]/.test(trimmed)) return false; // Reject HTML/markup and unsafe characters
+
+  var urlPattern = /^(?:https?|ftps?):\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:\/[^\s<>"'`\\^|]*)?$/i;
+  var bareDomainPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s<>"'`\\^|]*)?$/i;
+
+  return urlPattern.test(trimmed) || bareDomainPattern.test(trimmed);
 }
 
 /**
@@ -120,8 +124,11 @@ function extractUrl(text) {
     }
     return trimmed;
   }
-  var match = text.match(/https?:\/\/[^\s"'<>\(\)]+/i);
-  return match ? match[0] : "";
+  var match = text.match(/https?:\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:\/[^\s<>"'`\\^|]*)?/i);
+  if (match && isUrl(match[0])) {
+    return match[0];
+  }
+  return "";
 }
 
 /**
