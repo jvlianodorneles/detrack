@@ -227,10 +227,7 @@ Panel {
     bar: root.bar || (hostWidget ? hostWidget.bar : null)
     open: root.opened
     contentWidth: panel.fittedContentWidth(Style.space(280))
-    contentHeight: panel.fittedContentHeight(
-      root.showTrackerDetails ? Style.space(380) : Style.space(330),
-      root.showTrackerDetails ? Style.space(430) : Style.space(360)
-    )
+    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight)
 
     PanelKeyCatcher {
       anchors.fill: parent
@@ -246,7 +243,10 @@ Panel {
       }
 
       ColumnLayout {
-        anchors.fill: parent
+        id: panelColumn
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         spacing: Style.space(10)
 
         // ------------------------------------------------ Header (PanelHero)
