@@ -227,7 +227,10 @@ Panel {
     bar: root.bar || (hostWidget ? hostWidget.bar : null)
     open: root.opened
     contentWidth: panel.fittedContentWidth(Style.space(280))
-    contentHeight: panel.fittedContentHeight(Style.space(330), Style.space(360))
+    contentHeight: panel.fittedContentHeight(
+      root.showTrackerDetails ? Style.space(380) : Style.space(330),
+      root.showTrackerDetails ? Style.space(430) : Style.space(360)
+    )
 
     PanelKeyCatcher {
       anchors.fill: parent
