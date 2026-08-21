@@ -332,8 +332,20 @@ Panel {
             }
 
             PanelToolTip {
+              id: qrToolTip
               visible: qrMouseArea.containsMouse && root.hasUrl
               text: root.cleanedUrl ? ("Click to copy:\n" + root.cleanedUrl) : "Click to copy"
+              contentItem: Text {
+                text: qrToolTip.text
+                textFormat: Text.PlainText
+                color: qrToolTip.panelForeground
+                font.family: qrToolTip.fontFamily
+                font.pixelSize: qrToolTip.fontSize
+                leftPadding: Border.left(qrToolTip.panelBorderSpec) + Style.spacing.controlPaddingX
+                rightPadding: Border.right(qrToolTip.panelBorderSpec) + Style.spacing.controlPaddingX
+                topPadding: Border.top(qrToolTip.panelBorderSpec) + Style.spacing.controlPaddingY
+                bottomPadding: Border.bottom(qrToolTip.panelBorderSpec) + Style.spacing.controlPaddingY
+              }
             }
           }
         }
