@@ -86,7 +86,43 @@ Panel {
   function unshortenCurrentUrl() {
     if (!root.cleanedUrl) return
     unshortenProc.running = false
-    unshortenProc.command = ["curl", "-s", "-L", "--proto", "=http,https", "--max-redirs", "5", "-o", "/dev/null", "-w", "%{url_effective}", "--max-time", "4", "--", root.cleanedUrl]
+    unshortenProc.command = [
+      "python3",
+      "-c",
+      "import sys, socket, ipaddress, urllib.request, urllib.parse\n" +
+      "def is_safe_target_url(url):\n" +
+      "    try:\n" +
+      "        parsed = urllib.parse.urlparse(url)\n" +
+      "        if parsed.scheme.lower() not in ('http', 'https'):\n" +
+      "            return False\n" +
+      "        hostname = parsed.hostname\n" +
+      "        if not hostname or hostname.lower() in ('localhost', 'ip6-localhost', 'ip6-loopback'):\n" +
+      "            return False\n" +
+      "        for *_, sockaddr in socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM):\n" +
+      "            ip = ipaddress.ip_address(sockaddr[0])\n" +
+      "            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:\n" +
+      "                return False\n" +
+      "        return True\n" +
+      "    except Exception:\n" +
+      "        return False\n" +
+      "class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):\n" +
+      "    def redirect_request(self, req, fp, code, msg, headers, newurl):\n" +
+      "        if not is_safe_target_url(newurl):\n" +
+      "            return None\n" +
+      "        return super().redirect_request(req, fp, code, msg, headers, newurl)\n" +
+      "url = sys.argv[1] if len(sys.argv) > 1 else ''\n" +
+      "if url and is_safe_target_url(url):\n" +
+      "    try:\n" +
+      "        opener = urllib.request.build_opener(SafeRedirectHandler)\n" +
+      "        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})\n" +
+      "        with opener.open(req, timeout=4) as resp:\n" +
+      "            target = resp.geturl()\n" +
+      "            if is_safe_target_url(target):\n" +
+      "                print(target)\n" +
+      "    except Exception:\n" +
+      "        pass\n",
+      root.cleanedUrl
+    ]
     unshortenProc.running = true
   }
 
