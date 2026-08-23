@@ -89,38 +89,97 @@ Panel {
     unshortenProc.command = [
       "python3",
       "-c",
-      "import sys, socket, ipaddress, urllib.request, urllib.parse\n" +
-      "def is_safe_target_url(url):\n" +
-      "    try:\n" +
-      "        parsed = urllib.parse.urlparse(url)\n" +
-      "        if parsed.scheme.lower() not in ('http', 'https'):\n" +
-      "            return False\n" +
-      "        hostname = parsed.hostname\n" +
-      "        if not hostname or hostname.lower() in ('localhost', 'ip6-localhost', 'ip6-loopback'):\n" +
-      "            return False\n" +
-      "        for *_, sockaddr in socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM):\n" +
-      "            ip = ipaddress.ip_address(sockaddr[0])\n" +
-      "            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:\n" +
-      "                return False\n" +
-      "        return True\n" +
-      "    except Exception:\n" +
-      "        return False\n" +
-      "class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):\n" +
-      "    def redirect_request(self, req, fp, code, msg, headers, newurl):\n" +
-      "        if not is_safe_target_url(newurl):\n" +
+      "import sys, socket, ipaddress, ssl, http.client, urllib.parse\n" +
+      "def is_safe_ip(ip):\n" +
+      "    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:\n" +
+      "        ip = ip.ipv4_mapped\n" +
+      "    return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified)\n" +
+      "def unshorten(url, max_hops=5, timeout=4):\n" +
+      "    curr = url\n" +
+      "    visited = set()\n" +
+      "    for _ in range(max_hops):\n" +
+      "        if curr in visited:\n" +
+      "            break\n" +
+      "        visited.add(curr)\n" +
+      "        try:\n" +
+      "            parsed = urllib.parse.urlparse(curr)\n" +
+      "            scheme = parsed.scheme.lower()\n" +
+      "            if scheme not in ('http', 'https'):\n" +
+      "                return None\n" +
+      "            hostname = parsed.hostname\n" +
+      "            if not hostname or hostname.lower() in ('localhost', 'ip6-localhost', 'ip6-loopback'):\n" +
+      "                return None\n" +
+      "            is_https = scheme == 'https'\n" +
+      "            port = parsed.port or (443 if is_https else 80)\n" +
+      "            addr_info = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)\n" +
+      "            if not addr_info:\n" +
+      "                return None\n" +
+      "            safe_entries = []\n" +
+      "            for family, socktype, proto, _, sockaddr in addr_info:\n" +
+      "                ip = ipaddress.ip_address(sockaddr[0].split('%')[0])\n" +
+      "                if not is_safe_ip(ip):\n" +
+      "                    return None\n" +
+      "                safe_entries.append((family, socktype, proto, sockaddr))\n" +
+      "            if not safe_entries:\n" +
+      "                return None\n" +
+      "        except Exception:\n" +
       "            return None\n" +
-      "        return super().redirect_request(req, fp, code, msg, headers, newurl)\n" +
+      "        family, socktype, proto, target_sockaddr = safe_entries[0]\n" +
+      "        sock = None\n" +
+      "        conn = None\n" +
+      "        try:\n" +
+      "            sock = socket.socket(family, socktype, proto)\n" +
+      "            sock.settimeout(timeout)\n" +
+      "            sock.connect(target_sockaddr)\n" +
+      "            peer_ip = sock.getpeername()[0].split('%')[0]\n" +
+      "            if peer_ip != target_sockaddr[0].split('%')[0]:\n" +
+      "                sock.close()\n" +
+      "                return None\n" +
+      "            if not is_safe_ip(ipaddress.ip_address(peer_ip)):\n" +
+      "                sock.close()\n" +
+      "                return None\n" +
+      "            if is_https:\n" +
+      "                ctx = ssl.create_default_context()\n" +
+      "                sock = ctx.wrap_socket(sock, server_hostname=hostname)\n" +
+      "                conn = http.client.HTTPSConnection(hostname, port, timeout=timeout)\n" +
+      "            else:\n" +
+      "                conn = http.client.HTTPConnection(hostname, port, timeout=timeout)\n" +
+      "            conn.sock = sock\n" +
+      "            req_path = parsed.path or '/'\n" +
+      "            if parsed.query:\n" +
+      "                req_path += '?' + parsed.query\n" +
+      "            host_hdr = f'[{hostname}]' if ':' in hostname else hostname\n" +
+      "            if parsed.port and parsed.port != (443 if is_https else 80):\n" +
+      "                host_hdr = f'{host_hdr}:{parsed.port}'\n" +
+      "            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': '*/*', 'Host': host_hdr, 'Connection': 'close'}\n" +
+      "            conn.request('GET', req_path, headers=headers)\n" +
+      "            resp = conn.getresponse()\n" +
+      "            if resp.status in (301, 302, 303, 307, 308):\n" +
+      "                loc = resp.getheader('Location')\n" +
+      "                if not loc:\n" +
+      "                    break\n" +
+      "                curr = urllib.parse.urljoin(curr, loc)\n" +
+      "            else:\n" +
+      "                break\n" +
+      "        except Exception:\n" +
+      "            return None\n" +
+      "        finally:\n" +
+      "            if conn:\n" +
+      "                try:\n" +
+      "                    conn.close()\n" +
+      "                except Exception:\n" +
+      "                    pass\n" +
+      "            elif sock:\n" +
+      "                try:\n" +
+      "                    sock.close()\n" +
+      "                except Exception:\n" +
+      "                    pass\n" +
+      "    return curr\n" +
       "url = sys.argv[1] if len(sys.argv) > 1 else ''\n" +
-      "if url and is_safe_target_url(url):\n" +
-      "    try:\n" +
-      "        opener = urllib.request.build_opener(SafeRedirectHandler)\n" +
-      "        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})\n" +
-      "        with opener.open(req, timeout=4) as resp:\n" +
-      "            target = resp.geturl()\n" +
-      "            if is_safe_target_url(target):\n" +
-      "                print(target)\n" +
-      "    except Exception:\n" +
-      "        pass\n",
+      "if url:\n" +
+      "    target = unshorten(url)\n" +
+      "    if target and target != url:\n" +
+      "        print(target)\n",
       root.cleanedUrl
     ]
     unshortenProc.running = true

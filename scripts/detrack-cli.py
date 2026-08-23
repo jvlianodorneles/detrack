@@ -10,6 +10,8 @@ import re
 import json
 import socket
 import ipaddress
+import ssl
+import http.client
 import argparse
 import subprocess
 import urllib.parse
@@ -200,22 +202,25 @@ def is_tracking_param(key: str, hostname: str, preserve_params: set | None = Non
                     return True
     return False
 
+def is_safe_ip(ip_obj) -> bool:
+    if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped:
+        ip_obj = ip_obj.ipv4_mapped
+    return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved or ip_obj.is_unspecified)
+
 def is_safe_target_url(url: str) -> bool:
     try:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme.lower() not in ("http", "https"):
             return False
         hostname = parsed.hostname
-        if not hostname:
-            return False
-        if hostname.lower() in ("localhost", "ip6-localhost", "ip6-loopback"):
+        if not hostname or hostname.lower() in ("localhost", "ip6-localhost", "ip6-loopback"):
             return False
         try:
             addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
             for _, _, _, _, sockaddr in addr_info:
-                ip_str = sockaddr[0]
+                ip_str = sockaddr[0].split("%")[0]
                 ip = ipaddress.ip_address(ip_str)
-                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+                if not is_safe_ip(ip):
                     return False
         except Exception:
             return False
@@ -223,25 +228,94 @@ def is_safe_target_url(url: str) -> bool:
     except Exception:
         return False
 
-class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if not is_safe_target_url(newurl):
-            return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+def unshorten_url(url: str, max_hops: int = 5, timeout: float = 4.0) -> str:
+    curr = url
+    visited = set()
+    for _ in range(max_hops):
+        if curr in visited:
+            break
+        visited.add(curr)
+        try:
+            parsed = urllib.parse.urlparse(curr)
+            scheme = parsed.scheme.lower()
+            if scheme not in ("http", "https"):
+                break
+            hostname = parsed.hostname
+            if not hostname or hostname.lower() in ("localhost", "ip6-localhost", "ip6-loopback"):
+                break
+            is_https = scheme == "https"
+            port = parsed.port or (443 if is_https else 80)
+            addr_info = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            if not addr_info:
+                break
+            safe_entries = []
+            for family, socktype, proto, canonname, sockaddr in addr_info:
+                ip_str = sockaddr[0].split("%")[0]
+                ip_obj = ipaddress.ip_address(ip_str)
+                if not is_safe_ip(ip_obj):
+                    return url
+                safe_entries.append((family, socktype, proto, sockaddr))
+            if not safe_entries:
+                return url
+        except Exception:
+            return url
 
-def unshorten_url(url: str) -> str:
-    try:
-        if not is_safe_target_url(url):
+        family, socktype, proto, target_sockaddr = safe_entries[0]
+        sock = None
+        conn = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            sock.settimeout(timeout)
+            sock.connect(target_sockaddr)
+            peer_ip = sock.getpeername()[0].split("%")[0]
+            if peer_ip != target_sockaddr[0].split("%")[0]:
+                sock.close()
+                return url
+            if not is_safe_ip(ipaddress.ip_address(peer_ip)):
+                sock.close()
+                return url
+            if is_https:
+                ctx = ssl.create_default_context()
+                sock = ctx.wrap_socket(sock, server_hostname=hostname)
+                conn = http.client.HTTPSConnection(hostname, port, timeout=timeout)
+            else:
+                conn = http.client.HTTPConnection(hostname, port, timeout=timeout)
+            conn.sock = sock
+            req_path = parsed.path or "/"
+            if parsed.query:
+                req_path += "?" + parsed.query
+            host_hdr = f"[{hostname}]" if ":" in hostname else hostname
+            if parsed.port and parsed.port != (443 if is_https else 80):
+                host_hdr = f"{host_hdr}:{parsed.port}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Accept": "*/*",
+                "Host": host_hdr,
+                "Connection": "close"
+            }
+            conn.request("GET", req_path, headers=headers)
+            resp = conn.getresponse()
+            if resp.status in (301, 302, 303, 307, 308):
+                loc = resp.getheader("Location")
+                if not loc:
+                    break
+                curr = urllib.parse.urljoin(curr, loc)
+            else:
+                break
+        except Exception:
             return url
-        opener = urllib.request.build_opener(SafeRedirectHandler)
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with opener.open(req, timeout=4) as resp:
-            target = resp.geturl()
-            if is_safe_target_url(target):
-                return target
-            return url
-    except Exception:
-        return url
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            elif sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+    return curr
 
 def clean_url(raw: str, preserve_params: list | None = None, unshorten: bool = False) -> dict:
     preserve_set = {p.lower() for p in preserve_params} if preserve_params else set()
