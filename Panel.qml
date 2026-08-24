@@ -53,14 +53,14 @@ Panel {
   // Direct Process for wl-paste
   Process {
     id: clipboardProc
-    command: ["wl-paste", "--type", "text", "--no-newline"]
+    command: ["sh", "-c", "timeout 2 wl-paste --type text --no-newline 2>/dev/null | head -c 8192"]
     stdout: StdioCollector {
       id: clipboardStdout
       waitForEnd: true
       onStreamFinished: {
         var raw = String(text || "").trim()
         if (raw.length > 0) {
-          root.processInput(raw)
+          root.processInput(raw.slice(0, 8192))
         }
       }
     }
@@ -189,13 +189,17 @@ Panel {
     try {
       var raw = historyFile.text()
       if (raw && raw.length > 0) {
+        if (raw.length > 1048576) raw = raw.slice(0, 1048576)
         var hist = JSON.parse(raw)
         if (hist && Array.isArray(hist) && hist.length > 0) {
           for (var i = 0; i < Math.min(hist.length, 10); i++) {
             var item = hist[i]
             if (item && item.type === "text" && item.text) {
-              root.processInput(item.text)
-              return true
+              var txt = typeof item.text === "string" ? item.text.slice(0, 8192) : ""
+              if (txt) {
+                root.processInput(txt)
+                return true
+              }
             }
           }
         }
@@ -208,13 +212,14 @@ Panel {
     historyFile.reload()
     root.readHistoryFileSync()
     clipboardProc.running = false
-    clipboardProc.command = ["wl-paste", "--type", "text", "--no-newline"]
+    clipboardProc.command = ["sh", "-c", "timeout 2 wl-paste --type text --no-newline 2>/dev/null | head -c 8192"]
     clipboardProc.running = true
   }
 
   // Step 1: Clean URL -> Step 2: Generate QR Code from Cleaned URL
   function processInput(rawText) {
-    if (!rawText || rawText.length === 0) {
+    var bounded = (rawText && typeof rawText === "string") ? rawText.slice(0, 8192) : ""
+    if (!bounded || bounded.length === 0) {
       root.hasUrl = false
       root.originalUrl = ""
       root.cleanedUrl = ""
@@ -228,7 +233,7 @@ Panel {
       return
     }
 
-    var res = Engine.cleanUrl(rawText, { preserveParams: root.getPreserveParams() })
+    var res = Engine.cleanUrl(bounded, { preserveParams: root.getPreserveParams() })
     if (res.isValid && res.cleanedUrl && res.cleanedUrl.length > 0) {
       root.hasUrl = true
       root.originalUrl = res.originalUrl

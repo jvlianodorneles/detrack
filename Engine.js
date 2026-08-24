@@ -101,13 +101,14 @@ var REDIRECT_WRAPPERS = [
  */
 function isUrl(text) {
   if (!text || typeof text !== "string") return false;
+  if (text.length > 8192) return false;
   var trimmed = text.trim();
   if (trimmed.length < 4 || trimmed.length > 8192) return false;
-  if (/\s/.test(trimmed)) return false; // URLs cannot contain whitespace
+  if (/[\s\x00-\x1f\x7f-\x9f]/.test(trimmed)) return false; // URLs cannot contain whitespace or control chars
   if (/[<>"'`\\^|]/.test(trimmed)) return false; // Reject HTML/markup and unsafe characters
 
-  var urlPattern = /^(?:https?|ftps?):\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>"'`\\^|]*)?$/i;
-  var bareDomainPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:[/?#][^\s<>"'`\\^|]*)?$/i;
+  var urlPattern = /^(?:https?|ftps?):\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>"'`\\^|\x00-\x1f\x7f-\x9f]*)?$/i;
+  var bareDomainPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:[/?#][^\s<>"'`\\^|\x00-\x1f\x7f-\x9f]*)?$/i;
 
   return urlPattern.test(trimmed) || bareDomainPattern.test(trimmed);
 }
@@ -117,14 +118,15 @@ function isUrl(text) {
  */
 function extractUrl(text) {
   if (!text || typeof text !== "string") return "";
-  var trimmed = text.trim();
+  var bounded = text.length > 8192 ? text.slice(0, 8192) : text;
+  var trimmed = bounded.trim();
   if (isUrl(trimmed)) {
     if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//i.test(trimmed)) {
       return "https://" + trimmed;
     }
     return trimmed;
   }
-  var match = text.match(/https?:\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>"'`\\^|]*)?/i);
+  var match = bounded.match(/https?:\/\/(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>"'`\\^|\x00-\x1f\x7f-\x9f]*)?/i);
   if (match && isUrl(match[0])) {
     return match[0];
   }
@@ -352,9 +354,12 @@ function cleanUrl(rawInput, options) {
   var opts = options || {};
   var preserveParams = opts.preserveParams || [];
 
+  var inputBounded = (rawInput && typeof rawInput === "string") ? rawInput.slice(0, 8192) : "";
+  var safeOriginal = inputBounded.replace(/[\x00-\x1f\x7f-\x9f]/g, "").trim();
+
   var res = {
     isValid: false,
-    originalUrl: (rawInput || "").trim(),
+    originalUrl: safeOriginal,
     cleanedUrl: "",
     trackersRemoved: [],
     trackersCount: 0,
@@ -369,7 +374,7 @@ function cleanUrl(rawInput, options) {
     return res;
   }
 
-  var extracted = extractUrl(rawInput);
+  var extracted = extractUrl(inputBounded);
   if (!extracted) {
     res.message = "No valid URL found in input";
     return res;

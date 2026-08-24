@@ -320,5 +320,37 @@ test("Handles fragments directly attached to hostname", () => {
   assert.strictEqual(res.cleanedUrl, "https://example.com#section");
 });
 
+// 30. Security: Rejects non-whitespace control characters and ANSI escapes
+test("Rejects non-whitespace control characters and ANSI escape sequences in URLs", () => {
+  // ESC character / ANSI sequence injection
+  const evilAnsi = "https://example.com/login\x1b[2J\x1b[;H";
+  assert.strictEqual(Engine.isUrl(evilAnsi), false);
+  const resAnsi = Engine.cleanUrl(evilAnsi);
+  // extractUrl extracts the valid prefix before the escape sequence
+  assert.strictEqual(resAnsi.isValid, true);
+  assert.strictEqual(resAnsi.cleanedUrl, "https://example.com/login");
+  assert(!resAnsi.cleanedUrl.includes("\x1b"));
+
+  // NUL, BEL, and C0/C1 control characters
+  const evilCtrl = "https://example.com/path\x00\x07\x1f\x7f\x9f";
+  assert.strictEqual(Engine.isUrl(evilCtrl), false);
+
+  const resCtrl = Engine.cleanUrl(evilCtrl);
+  assert.strictEqual(resCtrl.isValid, true);
+  assert.strictEqual(resCtrl.cleanedUrl, "https://example.com/path");
+  assert(!/[\x00-\x1f\x7f-\x9f]/.test(resCtrl.cleanedUrl));
+});
+
+// 31. Robustness: Gracefully handles oversized inputs beyond 8 KiB limit
+test("Gracefully handles oversized inputs beyond 8 KiB limit", () => {
+  const hugeText = "https://example.com/page?" + "utm_source=spam&".repeat(2000);
+  assert(hugeText.length > 8192);
+  const res = Engine.cleanUrl(hugeText);
+  // Sliced to 8 KiB limit without stalling or throwing
+  assert.strictEqual(res.isValid, true);
+  assert(res.cleanedUrl.startsWith("https://example.com/page"));
+  assert(res.cleanedUrl.length <= 8192);
+});
+
 console.log(`\nResults: ${passed} / ${total} tests passed.\n`);
 if (passed !== total) process.exit(1);

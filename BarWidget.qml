@@ -35,6 +35,7 @@ BarWidget {
   function escapeMarkup(str) {
     if (!str) return ""
     return String(str)
+      .replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/g, "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
@@ -46,17 +47,21 @@ BarWidget {
     try {
       var raw = autoCleanHistoryFile.text()
       if (!raw) return
+      if (raw.length > 1048576) raw = raw.slice(0, 1048576)
       var hist = JSON.parse(raw)
       if (hist && Array.isArray(hist) && hist.length > 0) {
         var item = hist[0]
         if (item && item.type === "text" && item.text) {
-          var res = Engine.cleanUrl(item.text, { preserveParams: root.preserveParams })
-          if (res.isValid && res.trackersCount > 0 && res.cleanedUrl !== item.text) {
-            root.lastTrackersRemoved = res.trackersCount
-            root.lastCleanedUrl = res.cleanedUrl
-            Quickshell.execDetached(["wl-copy", res.cleanedUrl])
-            var notifMsg = "Auto-cleaned " + res.trackersCount + " tracker" + (res.trackersCount > 1 ? "s" : "") + " (" + res.charsSaved + " chars saved)"
-            Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack Auto-Cleaned", root.escapeMarkup(notifMsg + "\n" + res.cleanedUrl)])
+          var txt = typeof item.text === "string" ? item.text.slice(0, 8192) : ""
+          if (txt) {
+            var res = Engine.cleanUrl(txt, { preserveParams: root.preserveParams })
+            if (res.isValid && res.trackersCount > 0 && res.cleanedUrl !== txt) {
+              root.lastTrackersRemoved = res.trackersCount
+              root.lastCleanedUrl = res.cleanedUrl
+              Quickshell.execDetached(["wl-copy", res.cleanedUrl])
+              var notifMsg = "Auto-cleaned " + res.trackersCount + " tracker" + (res.trackersCount > 1 ? "s" : "") + " (" + res.charsSaved + " chars saved)"
+              Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack Auto-Cleaned", root.escapeMarkup(notifMsg + "\n" + res.cleanedUrl)])
+            }
           }
         }
       }
@@ -100,14 +105,14 @@ BarWidget {
   Process {
     id: pasteProc
     running: false
-    command: ["wl-paste", "--no-newline"]
+    command: ["sh", "-c", "timeout 2 wl-paste --no-newline 2>/dev/null | head -c 8192"]
     stdout: StdioCollector {
       id: pasteStdout
       waitForEnd: true
       onStreamFinished: {
         var raw = String(text || "").trim()
         if (raw.length > 0) {
-          var res = Engine.cleanUrl(raw, { preserveParams: root.preserveParams })
+          var res = Engine.cleanUrl(raw.slice(0, 8192), { preserveParams: root.preserveParams })
           if (res.isValid) {
             root.lastTrackersRemoved = res.trackersCount
             root.lastCleanedUrl = res.cleanedUrl

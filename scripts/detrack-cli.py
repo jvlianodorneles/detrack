@@ -8,6 +8,8 @@ import sys
 import os
 import re
 import json
+import time
+import select
 import socket
 import ipaddress
 import ssl
@@ -110,24 +112,27 @@ REDIRECT_PATTERNS = [
 def is_url(text: str) -> bool:
     if not text or not isinstance(text, str):
         return False
+    if len(text) > 8192:
+        return False
     t = text.strip()
     if len(t) < 4 or len(t) > 8192 or any(c.isspace() for c in t):
         return False
-    if re.search(r'[<>\'\"`\\^|]', t):
+    if re.search(r'[\x00-\x1f\x7f-\x9f<>\'\"`\\^|]', t):
         return False
-    url_pattern = r'^(?:https?|ftps?)://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|]*)?$'
-    bare_domain_pattern = r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|]*)?$'
+    url_pattern = r'^(?:https?|ftps?)://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|\x00-\x1f\x7f-\x9f]*)?$'
+    bare_domain_pattern = r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|\x00-\x1f\x7f-\x9f]*)?$'
     return bool(re.match(url_pattern, t, re.I) or re.match(bare_domain_pattern, t, re.I))
 
 def extract_url(text: str) -> str:
     if not text:
         return ""
-    t = text.strip()
+    bounded = text[:8192] if len(text) > 8192 else text
+    t = bounded.strip()
     if is_url(t):
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", t, re.I):
             return "https://" + t
         return t
-    m = re.search(r"https?://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|]*)?", text, re.I)
+    m = re.search(r"https?://(?:[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?|\[[a-fA-F0-9:]+\])(?::\d+)?(?:[/?#][^\s<>\'\"`\\^|\x00-\x1f\x7f-\x9f]*)?", bounded, re.I)
     if m and is_url(m.group(0)):
         return m.group(0)
     return ""
@@ -319,9 +324,11 @@ def unshorten_url(url: str, max_hops: int = 5, timeout: float = 4.0) -> str:
 
 def clean_url(raw: str, preserve_params: list | None = None, unshorten: bool = False) -> dict:
     preserve_set = {p.lower() for p in preserve_params} if preserve_params else set()
+    raw_bounded = (raw or "")[:8192]
+    safe_raw = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', raw_bounded)
     res = {
         "is_valid": False,
-        "original_url": (raw or "").strip(),
+        "original_url": safe_raw.strip(),
         "cleaned_url": "",
         "trackers_removed": [],
         "trackers_count": 0,
@@ -330,7 +337,7 @@ def clean_url(raw: str, preserve_params: list | None = None, unshorten: bool = F
         "is_shortener": False,
         "message": ""
     }
-    extracted = extract_url(raw)
+    extracted = extract_url(raw_bounded)
     if not extracted:
         res["message"] = "No valid URL found in input"
         return res
@@ -417,26 +424,56 @@ def clean_url(raw: str, preserve_params: list | None = None, unshorten: bool = F
     res["message"] = f"Cleaned {res['trackers_count']} tracker{'s' if res['trackers_count'] > 1 else ''}" if res["trackers_count"] > 0 else "URL is clean"
     return res
 
-def get_clipboard() -> str:
+def get_clipboard(max_bytes: int = 8192, timeout: float = 2.0) -> str:
     try:
-        proc = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True, check=True)
-        return proc.stdout.strip()
+        proc = subprocess.Popen(
+            ["wl-paste", "--no-newline"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+        try:
+            chunks = []
+            total_bytes = 0
+            start_time = time.monotonic()
+            while total_bytes < max_bytes:
+                rem = timeout - (time.monotonic() - start_time)
+                if rem <= 0:
+                    break
+                r, _, _ = select.select([proc.stdout], [], [], rem)
+                if not r:
+                    break
+                chunk = os.read(proc.stdout.fileno(), min(4096, max_bytes - total_bytes))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total_bytes += len(chunk)
+            proc.kill()
+            try:
+                proc.wait(timeout=0.2)
+            except Exception:
+                pass
+            raw = b"".join(chunks).decode("utf-8", errors="ignore").strip()
+            return raw[:8192]
+        except Exception:
+            proc.kill()
+            return ""
     except Exception:
         return ""
 
 def set_clipboard(text: str) -> bool:
     try:
-        subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True)
+        subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True, timeout=2.0)
         return True
     except Exception:
         return False
 
 def open_in_browser(url: str):
-    subprocess.Popen(["xdg-open", "--", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if is_url(url):
+        subprocess.Popen(["xdg-open", "--", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def render_terminal_qr(text: str):
     try:
-        subprocess.run(["qrencode", "-t", "ANSIUTF8", text])
+        subprocess.run(["qrencode", "-t", "ANSIUTF8", text], timeout=3.0)
     except Exception:
         print("Note: Install 'qrencode' package for ASCII terminal QR rendering.")
 
@@ -459,9 +496,9 @@ def main():
             print("Error: Clipboard is empty or could not be read.", file=sys.stderr)
             sys.exit(1)
     elif args.url:
-        input_text = args.url
+        input_text = args.url[:8192]
     elif not sys.stdin.isatty():
-        input_text = sys.stdin.read().strip()
+        input_text = sys.stdin.read(8192).strip()
     else:
         input_text = get_clipboard()
         if not input_text:
