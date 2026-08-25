@@ -39,6 +39,41 @@ Panel {
     return (root.settings && Array.isArray(root.settings.preserveParams)) ? root.settings.preserveParams : []
   }
 
+  readonly property string qrThemeStyle: (root.settings && root.settings.qrThemeStyle) ? root.settings.qrThemeStyle : "accent"
+
+  readonly property color qrBoxBackgroundColor: {
+    switch (root.qrThemeStyle) {
+      case "dark_themed":
+        return Color.surface || Util.alpha(Color.background, 0.95)
+      case "classic":
+      case "accent":
+      default:
+        return "#ffffff"
+    }
+  }
+
+  readonly property color qrModuleColor: {
+    switch (root.qrThemeStyle) {
+      case "dark_themed":
+      case "accent":
+        return Color.accent
+      case "classic":
+      default:
+        return "#000000"
+    }
+  }
+
+  readonly property color qrBoxBorderColor: {
+    switch (root.qrThemeStyle) {
+      case "dark_themed":
+      case "accent":
+        return Util.alpha(Color.accent, 0.3)
+      case "classic":
+      default:
+        return "transparent"
+    }
+  }
+
   // Bounded, no-follow regular-file reader for Omarchy clipboard history
   Process {
     id: historyReadProc
@@ -463,7 +498,7 @@ Panel {
 
           // Crisp native QR Code Box
           Rectangle {
-            id: qrWhiteBox
+            id: qrContainerBox
             visible: root.hasUrl && root.qrSize > 0
             anchors.centerIn: parent
             readonly property int moduleSize: root.qrSize > 0
@@ -472,7 +507,12 @@ Panel {
             width: (root.qrSize * moduleSize) + Style.space(16)
             height: width
             radius: Style.cornerRadius
-            color: "#ffffff"
+            color: root.qrBoxBackgroundColor
+            border.color: root.qrBoxBorderColor
+            border.width: root.qrBoxBorderColor !== "transparent" ? 1 : 0
+
+            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on border.color { ColorAnimation { duration: 150 } }
 
             Grid {
               anchors.centerIn: parent
@@ -487,9 +527,11 @@ Panel {
                   readonly property int matrixRow: Math.floor(index / root.qrSize)
                   readonly property int matrixColumn: index % root.qrSize
 
-                  width: qrWhiteBox.moduleSize
-                  height: qrWhiteBox.moduleSize
-                  color: (root.qrMatrix && root.qrMatrix[matrixRow] && root.qrMatrix[matrixRow][matrixColumn]) ? "#000000" : "transparent"
+                  width: qrContainerBox.moduleSize
+                  height: qrContainerBox.moduleSize
+                  color: (root.qrMatrix && root.qrMatrix[matrixRow] && root.qrMatrix[matrixRow][matrixColumn]) ? root.qrModuleColor : "transparent"
+
+                  Behavior on color { ColorAnimation { duration: 150 } }
                 }
               }
             }

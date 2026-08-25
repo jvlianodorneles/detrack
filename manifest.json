@@ -21,6 +21,7 @@
     "defaults": {
       "showTrackerBadge": false,
       "iconStyle": "shield",
+      "qrThemeStyle": "accent",
       "autoCleanClipboard": false,
       "preserveParams": []
     },
@@ -43,6 +44,18 @@
         ],
         "defaultValue": "shield",
         "description": "Icon displayed on the status bar (󰒃 Shield, 󰌹 Link, 󰐳 QR Code)."
+      },
+      {
+        "key": "qrThemeStyle",
+        "type": "enum",
+        "label": "QR Code Theme Style",
+        "options": [
+          "accent",
+          "dark_themed",
+          "classic"
+        ],
+        "defaultValue": "accent",
+        "description": "Color palette for QR Code (󰒃 Accent on White, 󰌹 Dark Themed, 󰄬 Classic Black & White)."
       },
       {
         "key": "autoCleanClipboard",

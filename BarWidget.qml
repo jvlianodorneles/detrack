@@ -12,6 +12,7 @@ BarWidget {
 
   readonly property bool showTrackerBadge: setting("showTrackerBadge", false)
   readonly property string iconStyle: setting("iconStyle", "shield")
+  readonly property string qrThemeStyle: setting("qrThemeStyle", "accent")
   readonly property bool autoCleanClipboard: setting("autoCleanClipboard", false)
   readonly property var preserveParams: setting("preserveParams", [])
 
