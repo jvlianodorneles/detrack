@@ -424,6 +424,28 @@ def clean_url(raw: str, preserve_params: list | None = None, unshorten: bool = F
     res["message"] = f"Cleaned {res['trackers_count']} tracker{'s' if res['trackers_count'] > 1 else ''}" if res["trackers_count"] > 0 else "URL is clean"
     return res
 
+def _read_stdin_bounded(max_bytes: int = 8192, timeout: float = 2.0) -> str:
+    """Read from stdin with a deadline and byte cap, preventing indefinite blocking."""
+    chunks = []
+    total_bytes = 0
+    start_time = time.monotonic()
+    try:
+        while total_bytes < max_bytes:
+            rem = timeout - (time.monotonic() - start_time)
+            if rem <= 0:
+                break
+            r, _, _ = select.select([sys.stdin], [], [], rem)
+            if not r:
+                break
+            chunk = os.read(sys.stdin.fileno(), min(4096, max_bytes - total_bytes))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total_bytes += len(chunk)
+    except Exception:
+        pass
+    return b"".join(chunks).decode("utf-8", errors="ignore").strip()[:max_bytes]
+
 def get_clipboard(max_bytes: int = 8192, timeout: float = 2.0) -> str:
     try:
         proc = subprocess.Popen(
@@ -498,7 +520,7 @@ def main():
     elif args.url:
         input_text = args.url[:8192]
     elif not sys.stdin.isatty():
-        input_text = sys.stdin.read(8192).strip()
+        input_text = _read_stdin_bounded(max_bytes=8192, timeout=2.0)
     else:
         input_text = get_clipboard()
         if not input_text:

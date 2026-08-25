@@ -133,7 +133,6 @@ BarWidget {
 
   function cleanClipboardDirect() {
     pasteProc.running = false
-    pasteProc.command = ["wl-paste", "--no-newline"]
     pasteProc.running = true
   }
 
