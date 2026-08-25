@@ -20,6 +20,61 @@ BarWidget {
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
+  // Bounded, no-follow regular-file reader for Omarchy clipboard auto-clean
+  Process {
+    id: autoCleanHistoryProc
+    running: false
+    command: [
+      "python3",
+      "-c",
+      "import os, stat, select, time, json, sys\n" +
+      "path = os.path.expanduser('~/.local/state/omarchy/clipboard-history.json')\n" +
+      "try:\n" +
+      "    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)\n" +
+      "    fd = os.open(path, flags)\n" +
+      "    try:\n" +
+      "        st = os.fstat(fd)\n" +
+      "        if stat.S_ISREG(st.st_mode):\n" +
+      "            chunks, total, start_time = [], 0, time.monotonic()\n" +
+      "            while total < 65536:\n" +
+      "                rem = 1.0 - (time.monotonic() - start_time)\n" +
+      "                if rem <= 0: break\n" +
+      "                r, _, _ = select.select([fd], [], [], rem)\n" +
+      "                if not r: break\n" +
+      "                chunk = os.read(fd, min(4096, 65536 - total))\n" +
+      "                if not chunk: break\n" +
+      "                chunks.append(chunk)\n" +
+      "                total += len(chunk)\n" +
+      "            data = b''.join(chunks).decode('utf-8', errors='ignore')\n" +
+      "            hist = json.loads(data)\n" +
+      "            if isinstance(hist, list) and hist:\n" +
+      "                item = hist[0]\n" +
+      "                if isinstance(item, dict) and item.get('type') == 'text' and item.get('text'):\n" +
+      "                    print(str(item['text'])[:8192], end='')\n" +
+      "    finally:\n" +
+      "        os.close(fd)\n" +
+      "except Exception:\n" +
+      "    pass\n"
+    ]
+    stdout: StdioCollector {
+      id: autoCleanStdout
+      waitForEnd: true
+      onStreamFinished: {
+        var txt = String(text || "").trim()
+        if (txt.length > 0) {
+          var res = Engine.cleanUrl(txt.slice(0, 8192), { preserveParams: root.preserveParams })
+          if (res.isValid && res.trackersCount > 0 && res.cleanedUrl !== txt) {
+            root.lastTrackersRemoved = res.trackersCount
+            root.lastCleanedUrl = res.cleanedUrl
+            Quickshell.execDetached(["wl-copy", res.cleanedUrl])
+            var notifMsg = "Auto-cleaned " + res.trackersCount + " tracker" + (res.trackersCount > 1 ? "s" : "") + " (" + res.charsSaved + " chars saved)"
+            Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack Auto-Cleaned", root.escapeMarkup(notifMsg + "\n" + res.cleanedUrl)])
+          }
+        }
+      }
+    }
+  }
+
   // Background monitor for optional Auto-Clean clipboard mode
   property FileView autoCleanHistoryFile: FileView {
     path: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
@@ -44,28 +99,8 @@ BarWidget {
   }
 
   function checkAndAutoClean() {
-    try {
-      var raw = autoCleanHistoryFile.text()
-      if (!raw) return
-      if (raw.length > 1048576) raw = raw.slice(0, 1048576)
-      var hist = JSON.parse(raw)
-      if (hist && Array.isArray(hist) && hist.length > 0) {
-        var item = hist[0]
-        if (item && item.type === "text" && item.text) {
-          var txt = typeof item.text === "string" ? item.text.slice(0, 8192) : ""
-          if (txt) {
-            var res = Engine.cleanUrl(txt, { preserveParams: root.preserveParams })
-            if (res.isValid && res.trackersCount > 0 && res.cleanedUrl !== txt) {
-              root.lastTrackersRemoved = res.trackersCount
-              root.lastCleanedUrl = res.cleanedUrl
-              Quickshell.execDetached(["wl-copy", res.cleanedUrl])
-              var notifMsg = "Auto-cleaned " + res.trackersCount + " tracker" + (res.trackersCount > 1 ? "s" : "") + " (" + res.charsSaved + " chars saved)"
-              Quickshell.execDetached(["notify-send", "-a", "DeTrack", "-i", "security-high", "DeTrack Auto-Cleaned", root.escapeMarkup(notifMsg + "\n" + res.cleanedUrl)])
-            }
-          }
-        }
-      }
-    } catch (e) {}
+    autoCleanHistoryProc.running = false
+    autoCleanHistoryProc.running = true
   }
 
   function open() {

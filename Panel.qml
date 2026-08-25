@@ -39,15 +39,62 @@ Panel {
     return (root.settings && Array.isArray(root.settings.preserveParams)) ? root.settings.preserveParams : []
   }
 
-  // Instant synchronous sync from Omarchy clipboard history
+  // Bounded, no-follow regular-file reader for Omarchy clipboard history
+  Process {
+    id: historyReadProc
+    running: false
+    command: [
+      "python3",
+      "-c",
+      "import os, stat, select, time, json, sys\n" +
+      "path = os.path.expanduser('~/.local/state/omarchy/clipboard-history.json')\n" +
+      "try:\n" +
+      "    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)\n" +
+      "    fd = os.open(path, flags)\n" +
+      "    try:\n" +
+      "        st = os.fstat(fd)\n" +
+      "        if stat.S_ISREG(st.st_mode):\n" +
+      "            chunks, total, start_time = [], 0, time.monotonic()\n" +
+      "            while total < 65536:\n" +
+      "                rem = 1.0 - (time.monotonic() - start_time)\n" +
+      "                if rem <= 0: break\n" +
+      "                r, _, _ = select.select([fd], [], [], rem)\n" +
+      "                if not r: break\n" +
+      "                chunk = os.read(fd, min(4096, 65536 - total))\n" +
+      "                if not chunk: break\n" +
+      "                chunks.append(chunk)\n" +
+      "                total += len(chunk)\n" +
+      "            data = b''.join(chunks).decode('utf-8', errors='ignore')\n" +
+      "            hist = json.loads(data)\n" +
+      "            if isinstance(hist, list) and hist:\n" +
+      "                for item in hist[:10]:\n" +
+      "                    if isinstance(item, dict) and item.get('type') == 'text' and item.get('text'):\n" +
+      "                        print(str(item['text'])[:8192], end='')\n" +
+      "                        break\n" +
+      "    finally:\n" +
+      "        os.close(fd)\n" +
+      "except Exception:\n" +
+      "    pass\n"
+    ]
+    stdout: StdioCollector {
+      id: historyStdout
+      waitForEnd: true
+      onStreamFinished: {
+        var raw = String(text || "").trim()
+        if (raw.length > 0) {
+          root.processInput(raw.slice(0, 8192))
+        }
+      }
+    }
+  }
+
+  // Watcher for Omarchy clipboard history updates
   property FileView historyFile: FileView {
     path: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
     watchChanges: true
     printErrors: false
-    onFileChanged: reload()
-    onLoaded: {
-      root.readHistoryFileSync()
-    }
+    onFileChanged: root.readHistoryFileBounded()
+    onLoaded: root.readHistoryFileBounded()
   }
 
   // Direct Process for wl-paste
@@ -190,32 +237,13 @@ Panel {
     unshortenProc.running = true
   }
 
-  function readHistoryFileSync() {
-    try {
-      var raw = historyFile.text()
-      if (raw && raw.length > 0) {
-        if (raw.length > 1048576) raw = raw.slice(0, 1048576)
-        var hist = JSON.parse(raw)
-        if (hist && Array.isArray(hist) && hist.length > 0) {
-          for (var i = 0; i < Math.min(hist.length, 10); i++) {
-            var item = hist[i]
-            if (item && item.type === "text" && item.text) {
-              var txt = typeof item.text === "string" ? item.text.slice(0, 8192) : ""
-              if (txt) {
-                root.processInput(txt)
-                return true
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {}
-    return false
+  function readHistoryFileBounded() {
+    historyReadProc.running = false
+    historyReadProc.running = true
   }
 
   function fetchFromClipboard() {
-    historyFile.reload()
-    root.readHistoryFileSync()
+    root.readHistoryFileBounded()
     clipboardProc.running = false
     clipboardProc.running = true
   }

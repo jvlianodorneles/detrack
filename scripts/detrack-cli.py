@@ -8,6 +8,7 @@ import sys
 import os
 import re
 import json
+import stat
 import time
 import select
 import socket
@@ -449,7 +450,45 @@ def _read_stdin_bounded(max_bytes: int = 8192, timeout: float = 2.0) -> str:
         pass
     return b"".join(chunks).decode("utf-8", errors="ignore").strip()[:max_bytes]
 
+def read_clipboard_history(max_bytes: int = 65536, timeout: float = 2.0) -> str:
+    """Read latest text entry from omarchy clipboard-history.json with no-follow and regular-file check."""
+    path = os.path.expanduser("~/.local/state/omarchy/clipboard-history.json")
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                return ""
+            chunks = []
+            total_bytes = 0
+            start_time = time.monotonic()
+            while total_bytes < max_bytes:
+                rem = timeout - (time.monotonic() - start_time)
+                if rem <= 0:
+                    break
+                r, _, _ = select.select([fd], [], [], rem)
+                if not r:
+                    break
+                chunk = os.read(fd, min(4096, max_bytes - total_bytes))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total_bytes += len(chunk)
+            raw = b"".join(chunks).decode("utf-8", errors="ignore")
+            hist = json.loads(raw)
+            if isinstance(hist, list) and hist:
+                for item in hist[:10]:
+                    if isinstance(item, dict) and item.get("type") == "text" and item.get("text"):
+                        return str(item["text"])[:8192]
+            return ""
+        finally:
+            os.close(fd)
+    except Exception:
+        return ""
+
 def get_clipboard(max_bytes: int = 8192, timeout: float = 2.0) -> str:
+    raw = ""
     try:
         proc = subprocess.Popen(
             ["wl-paste", "--no-newline"],
@@ -477,13 +516,15 @@ def get_clipboard(max_bytes: int = 8192, timeout: float = 2.0) -> str:
                 proc.wait(timeout=0.2)
             except Exception:
                 pass
-            raw = b"".join(chunks).decode("utf-8", errors="ignore").strip()
-            return raw[:8192]
+            raw = b"".join(chunks).decode("utf-8", errors="ignore").strip()[:8192]
         except Exception:
             proc.kill()
-            return ""
+            raw = ""
     except Exception:
-        return ""
+        raw = ""
+    if not raw:
+        raw = read_clipboard_history(max_bytes=65536, timeout=timeout)
+    return raw
 
 def set_clipboard(text: str) -> bool:
     try:
