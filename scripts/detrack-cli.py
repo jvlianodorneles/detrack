@@ -199,7 +199,7 @@ def is_tracking_param(key: str, hostname: str, preserve_params: set | None = Non
         return True
 
     for dom, params in DOMAIN_SPECIFIC_PARAMS.items():
-        if dom in hostname:
+        if hostname == dom or hostname.endswith("." + dom):
             if lk in params:
                 return True
             for p in params:
@@ -304,7 +304,10 @@ def unshorten_url(url: str, max_hops: int = 5, timeout: float = 4.0) -> str:
                 loc = resp.getheader("Location")
                 if not loc:
                     break
-                curr = urllib.parse.urljoin(curr, loc)
+                next_url = urllib.parse.urljoin(curr, loc)
+                if not next_url.lower().startswith(("http://", "https://")):
+                    break
+                curr = next_url
             else:
                 break
         except Exception:
@@ -490,12 +493,12 @@ def set_clipboard(text: str) -> bool:
         return False
 
 def open_in_browser(url: str):
-    if is_url(url):
+    if is_url(url) and re.match(r"^https?://", url, re.I):
         subprocess.Popen(["xdg-open", "--", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def render_terminal_qr(text: str):
     try:
-        subprocess.run(["qrencode", "-t", "ANSIUTF8", text], timeout=3.0)
+        subprocess.run(["qrencode", "-t", "ANSIUTF8", "--", text], timeout=3.0)
     except Exception:
         print("Note: Install 'qrencode' package for ASCII terminal QR rendering.")
 

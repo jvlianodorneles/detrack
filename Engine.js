@@ -291,7 +291,7 @@ function isTrackingParam(key, hostname, preserveParams) {
 
   // Domain-specific check
   for (var dom in DOMAIN_SPECIFIC_PARAMS) {
-    if (hostname.indexOf(dom) !== -1) {
+    if (hostname === dom || hostname.endsWith("." + dom)) {
       var specificList = DOMAIN_SPECIFIC_PARAMS[dom];
       for (var s = 0; s < specificList.length; s++) {
         var spec = specificList[s].toLowerCase();

@@ -29,9 +29,9 @@ echo "✓ Installed Omarchy Quickshell Plugin to ${OMARCHY_PLUGIN_DIR}"
 
 # 3. Register in Omarchy shell.json bar layout
 if [ -f "${SHELL_CONFIG}" ]; then
-  python3 -c "
-import json
-config_path = '${SHELL_CONFIG}'
+  DETRACK_CONFIG_PATH="${SHELL_CONFIG}" python3 -c "
+import json, os
+config_path = os.environ.get('DETRACK_CONFIG_PATH')
 try:
     with open(config_path, 'r') as f:
         data = json.load(f)

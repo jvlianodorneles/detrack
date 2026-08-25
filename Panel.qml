@@ -85,6 +85,8 @@ Panel {
 
   function unshortenCurrentUrl() {
     if (!root.cleanedUrl) return
+    var safeUrl = String(root.cleanedUrl).slice(0, 8192)
+    if (!/^https?:\/\//i.test(safeUrl)) return
     unshortenProc.running = false
     unshortenProc.command = [
       "python3",
@@ -158,7 +160,10 @@ Panel {
       "                loc = resp.getheader('Location')\n" +
       "                if not loc:\n" +
       "                    break\n" +
-      "                curr = urllib.parse.urljoin(curr, loc)\n" +
+      "                next_url = urllib.parse.urljoin(curr, loc)\n" +
+      "                if not next_url.lower().startswith(('http://', 'https://')):\n" +
+      "                    break\n" +
+      "                curr = next_url\n" +
       "            else:\n" +
       "                break\n" +
       "        except Exception:\n" +
@@ -180,7 +185,7 @@ Panel {
       "    target = unshorten(url)\n" +
       "    if target and target != url:\n" +
       "        print(target)\n",
-      root.cleanedUrl
+      safeUrl
     ]
     unshortenProc.running = true
   }
@@ -212,7 +217,6 @@ Panel {
     historyFile.reload()
     root.readHistoryFileSync()
     clipboardProc.running = false
-    clipboardProc.command = ["sh", "-c", "timeout 2 wl-paste --type text --no-newline 2>/dev/null | head -c 8192"]
     clipboardProc.running = true
   }
 

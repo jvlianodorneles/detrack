@@ -352,5 +352,21 @@ test("Gracefully handles oversized inputs beyond 8 KiB limit", () => {
   assert(res.cleanedUrl.length <= 8192);
 });
 
+// 32. Strict domain matching: Avoid stripping params on lookalike substring domains
+test("Strict domain matching: avoids stripping params on lookalike substring domains", () => {
+  // Should match legitimate domain & subdomains
+  const legit = Engine.cleanUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=track123&t=10");
+  assert.strictEqual(legit.cleanedUrl, "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10");
+  assert.strictEqual(legit.trackersCount, 1);
+
+  const sub = Engine.cleanUrl("https://music.youtube.com/watch?v=dQw4w9WgXcQ&si=track123");
+  assert.strictEqual(sub.cleanedUrl, "https://music.youtube.com/watch?v=dQw4w9WgXcQ");
+
+  // Should NOT strip domain-specific param on lookalike domain
+  const lookalike = Engine.cleanUrl("https://notyoutube.com/watch?v=123&si=keepme");
+  assert.strictEqual(lookalike.cleanedUrl, "https://notyoutube.com/watch?v=123&si=keepme");
+  assert.strictEqual(lookalike.trackersCount, 0);
+});
+
 console.log(`\nResults: ${passed} / ${total} tests passed.\n`);
 if (passed !== total) process.exit(1);
