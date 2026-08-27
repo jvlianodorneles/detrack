@@ -81,6 +81,7 @@ BarWidget {
     path: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
     watchChanges: root.autoCleanClipboard
     printErrors: false
+    blockAllReads: true
     onFileChanged: {
       if (root.autoCleanClipboard) {
         root.checkAndAutoClean()

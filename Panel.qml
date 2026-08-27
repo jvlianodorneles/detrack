@@ -128,8 +128,8 @@ Panel {
     path: Quickshell.env("HOME") + "/.local/state/omarchy/clipboard-history.json"
     watchChanges: true
     printErrors: false
+    blockAllReads: true
     onFileChanged: root.readHistoryFileBounded()
-    onLoaded: root.readHistoryFileBounded()
   }
 
   // Direct Process for wl-paste
