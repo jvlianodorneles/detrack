@@ -34,15 +34,17 @@ import json, os
 config_path = os.environ.get('DETRACK_CONFIG_PATH')
 try:
     with open(config_path, 'r') as f:
-        data = json.load(f)
-    bar_layout = data.setdefault('bar', {}).setdefault('layout', {})
-    right_list = bar_layout.setdefault('right', [])
-    ids = [item.get('id') if isinstance(item, dict) else item for item in right_list]
-    if 'dorneles.detrack' not in ids:
+        content = f.read()
+    if 'dorneles.detrack' not in content:
+        data = json.loads(content)
+        bar_layout = data.setdefault('bar', {}).setdefault('layout', {})
+        right_list = bar_layout.setdefault('right', [])
         right_list.insert(0, {'id': 'dorneles.detrack'})
         with open(config_path, 'w') as f:
             json.dump(data, f, indent=2)
         print('✓ Registered dorneles.detrack in Omarchy bar layout (shell.json)')
+    else:
+        print('✓ dorneles.detrack is already registered in shell.json')
 except Exception as e:
     print('Note: Could not automatically update shell.json:', e)
 "
