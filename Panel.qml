@@ -343,7 +343,7 @@ Panel {
 
   function openInBrowser() {
     if (!root.hasUrl || !root.cleanedUrl) return
-    Quickshell.execDetached(["xdg-open", "--", root.cleanedUrl])
+    Quickshell.execDetached(["xdg-open", root.cleanedUrl])
     root.close()
   }
 

@@ -535,7 +535,7 @@ def set_clipboard(text: str) -> bool:
 
 def open_in_browser(url: str):
     if is_url(url) and re.match(r"^https?://", url, re.I):
-        subprocess.Popen(["xdg-open", "--", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def render_terminal_qr(text: str):
     try:
